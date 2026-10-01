@@ -6,6 +6,7 @@ export interface Avatar {
   color: string;
   skin: string;
   hair: string;
+  gender: 'girl' | 'boy';
 }
 
 export interface StorySetting {
@@ -50,12 +51,12 @@ export interface StoryConfig {
 }
 
 export const AVATARS: Avatar[] = [
-  { id: 'a1', name: 'Ayesha', color: '#f93c6a', skin: '#f4c4a0', hair: '#2d1810' },
-  { id: 'a2', name: 'Bilal', color: '#31a3eb', skin: '#e8b890', hair: '#1a1a1a' },
-  { id: 'a3', name: 'Fatima', color: '#1eb549', skin: '#f0b888', hair: '#3d2317' },
-  { id: 'a4', name: 'Hassan', color: '#fb7a0f', skin: '#d4a070', hair: '#1a1a1a' },
-  { id: 'a5', name: 'Zainab', color: '#f59e0b', skin: '#f4c4a0', hair: '#2d1810' },
-  { id: 'a6', name: 'Omar', color: '#e01f50', skin: '#c89060', hair: '#1a1a1a' },
+  { id: 'a1', name: 'Ayesha', color: '#f93c6a', skin: '#f4c4a0', hair: '#2d1810', gender: 'girl' },
+  { id: 'a2', name: 'Bilal', color: '#31a3eb', skin: '#e8b890', hair: '#1a1a1a', gender: 'boy' },
+  { id: 'a3', name: 'Fatima', color: '#1eb549', skin: '#f0b888', hair: '#3d2317', gender: 'girl' },
+  { id: 'a4', name: 'Hassan', color: '#fb7a0f', skin: '#d4a070', hair: '#1a1a1a', gender: 'boy' },
+  { id: 'a5', name: 'Zainab', color: '#f59e0b', skin: '#f4c4a0', hair: '#2d1810', gender: 'girl' },
+  { id: 'a6', name: 'Omar', color: '#e01f50', skin: '#c89060', hair: '#1a1a1a', gender: 'boy' },
 ];
 
 export const SETTINGS: StorySetting[] = [

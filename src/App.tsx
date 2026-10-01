@@ -4,10 +4,11 @@ import { StoryCreator } from './components/StoryCreator';
 import { StoryReader } from './components/StoryReader';
 import { StoryQuiz } from './components/StoryQuiz';
 import { Logo, Button, Card, FloatingDecor } from './components/ui';
-import { PARENT_PURPOSES, StoryConfig, buildStory, StoryData } from './data/storyData';
-import { Heart, ArrowLeft, Moon, School, Share2, ShieldCheck } from 'lucide-react';
+import { PARENT_PURPOSES, StoryConfig, StoryData } from './data/storyData';
+import { generateStory } from './data/generateStory';
+import { Heart, ArrowLeft, Moon, School, Share2, ShieldCheck, Sparkles } from 'lucide-react';
 
-type View = 'landing' | 'creator' | 'reader' | 'quiz' | 'parent';
+type View = 'landing' | 'creator' | 'loading' | 'reader' | 'quiz' | 'parent';
 
 const PARENT_ICONS: Record<string, React.FC<any>> = {
   darkness: Moon,
@@ -22,9 +23,11 @@ function App() {
   const [story, setStory] = useState<StoryData | null>(null);
   const [parentPurpose, setParentPurpose] = useState<string | undefined>(undefined);
 
-  const handleCreate = (cfg: StoryConfig) => {
+  const handleCreate = async (cfg: StoryConfig) => {
     setConfig(cfg);
-    setStory(buildStory(cfg));
+    setView('loading');
+    const { story } = await generateStory(cfg);
+    setStory(story);
     setView('reader');
   };
 
@@ -109,6 +112,16 @@ function App() {
         onBack={() => setView('landing')}
         initialParentPurpose={parentPurpose}
       />
+    );
+  }
+
+  if (view === 'loading') {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-gradient-to-b from-sky2-900 via-sky2-800 to-indigo-900 px-4 text-center">
+        <Sparkles className="w-12 h-12 text-saffron-300 animate-bounce-soft" />
+        <h1 className="text-2xl font-extrabold text-white">Writing {config?.childName}'s story…</h1>
+        <p className="font-urdu text-xl text-white/80" dir="rtl">کہانی لکھی جا رہی ہے</p>
+      </div>
     );
   }
 
