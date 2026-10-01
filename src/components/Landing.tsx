@@ -1,11 +1,12 @@
 import React from 'react';
 import { Logo, Button, Card, SectionBadge, FloatingDecor } from './ui';
-import { MountainScene, VillageScene, BazaarScene, EidScene, StarTwinkle, BookLogo } from './Illustrations';
-import { Sparkles, BookOpen, Globe, Mic, ShieldCheck, Gift, MapPin, Heart, Star, Download, Share2, Moon, School } from 'lucide-react';
+import { MountainScene, VillageScene, BazaarScene, EidScene, StarTwinkle } from './Illustrations';
+import { Sparkles, BookOpen, Globe, Mic, ShieldCheck, MapPin, Heart, Star, Download, Moon, School } from 'lucide-react';
 
 interface LandingProps {
   onCreate: () => void;
   onParentMode: () => void;
+  onMyStories: () => void;
 }
 
 const FEATURES = [
@@ -31,7 +32,7 @@ const PARENT_TOPICS = [
   { icon: ShieldCheck, title: 'Dealing with Unkindness', desc: 'Stories that build resilience and teach kind, strong responses.' },
 ];
 
-export const Landing: React.FC<LandingProps> = ({ onCreate, onParentMode }) => {
+export const Landing: React.FC<LandingProps> = ({ onCreate, onParentMode, onMyStories }) => {
   return (
     <div className="min-h-screen bg-gradient-to-b from-saffron-50 via-rose2-50 to-emerald2-50">
       {/* Nav */}
@@ -44,7 +45,10 @@ export const Landing: React.FC<LandingProps> = ({ onCreate, onParentMode }) => {
             <a href="#settings" className="hover:text-saffron-600 transition-colors">Settings</a>
             <a href="#parent" className="hover:text-saffron-600 transition-colors">Parent Mode</a>
           </div>
-          <Button size="sm" onClick={onCreate} icon={<Sparkles className="w-4 h-4" />}>Create Story</Button>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="ghost" onClick={onMyStories} icon={<BookOpen className="w-4 h-4" />}>My Stories</Button>
+            <Button size="sm" onClick={onCreate} icon={<Sparkles className="w-4 h-4" />}>Create Story</Button>
+          </div>
         </div>
       </nav>
 
@@ -237,8 +241,8 @@ export const Landing: React.FC<LandingProps> = ({ onCreate, onParentMode }) => {
           <div className="relative rounded-[2rem] bg-gradient-to-br from-saffron-400 via-rose2-500 to-saffron-600 p-12 shadow-2xl">
             <FloatingDecor />
             <StarTwinkle className="absolute top-6 left-8 animate-twinkle" size={28} />
-            <StarTwinkle className="absolute top-10 right-10 animate-twinkle" size={20} style={{ animationDelay: '1s' } as any} />
-            <StarTwinkle className="absolute bottom-8 left-12 animate-twinkle" size={18} color="#fff" style={{ animationDelay: '2s' } as any} />
+            <StarTwinkle className="absolute top-10 right-10 animate-twinkle" size={20} style={{ animationDelay: '1s' } as React.CSSProperties} />
+            <StarTwinkle className="absolute bottom-8 left-12 animate-twinkle" size={18} color="#fff" style={{ animationDelay: '2s' } as React.CSSProperties} />
             <h2 className="relative text-4xl font-extrabold text-white text-shadow-soft md:text-5xl">Ready for Magic?</h2>
             <p className="relative mt-4 text-lg text-white/90">Create a personalized story for your child in minutes.</p>
             <Button variant="white" size="lg" className="relative mt-6" onClick={onCreate} icon={<Sparkles className="w-5 h-5" />}>

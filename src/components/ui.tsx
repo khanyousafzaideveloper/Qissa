@@ -4,10 +4,10 @@ import { StarTwinkle, BookLogo } from './Illustrations';
 export const FloatingDecor: React.FC = () => (
   <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
     <StarTwinkle className="absolute top-[15%] left-[8%] animate-twinkle" size={20} color="#fbbf24" />
-    <StarTwinkle className="absolute top-[25%] right-[12%] animate-twinkle" size={16} color="#f93c6a" style={{ animationDelay: '1s' } as any} />
-    <StarTwinkle className="absolute top-[60%] left-[15%] animate-twinkle" size={14} color="#31a3eb" style={{ animationDelay: '2s' } as any} />
-    <StarTwinkle className="absolute top-[45%] right-[8%] animate-twinkle" size={22} color="#1eb549" style={{ animationDelay: '0.5s' } as any} />
-    <StarTwinkle className="absolute top-[80%] right-[20%] animate-twinkle" size={12} color="#fbbf24" style={{ animationDelay: '1.5s' } as any} />
+    <StarTwinkle className="absolute top-[25%] right-[12%] animate-twinkle" size={16} color="#f93c6a" style={{ animationDelay: '1s' } as React.CSSProperties} />
+    <StarTwinkle className="absolute top-[60%] left-[15%] animate-twinkle" size={14} color="#31a3eb" style={{ animationDelay: '2s' } as React.CSSProperties} />
+    <StarTwinkle className="absolute top-[45%] right-[8%] animate-twinkle" size={22} color="#1eb549" style={{ animationDelay: '0.5s' } as React.CSSProperties} />
+    <StarTwinkle className="absolute top-[80%] right-[20%] animate-twinkle" size={12} color="#fbbf24" style={{ animationDelay: '1.5s' } as React.CSSProperties} />
   </div>
 );
 
@@ -33,7 +33,8 @@ export const Button: React.FC<{
   size?: 'sm' | 'md' | 'lg';
   className?: string;
   icon?: React.ReactNode;
-}> = ({ children, onClick, variant = 'primary', size = 'md', className = '', icon }) => {
+  disabled?: boolean;
+}> = ({ children, onClick, variant = 'primary', size = 'md', className = '', icon, disabled = false }) => {
   const variants = {
     primary: 'bg-gradient-to-r from-saffron-500 to-rose2-500 text-white shadow-lg shadow-saffron-300/50 hover:shadow-xl hover:shadow-rose2-300/50 hover:scale-105',
     secondary: 'bg-gradient-to-r from-sky2-500 to-emerald2-500 text-white shadow-lg shadow-sky2-300/50 hover:shadow-xl hover:scale-105',
@@ -44,7 +45,8 @@ export const Button: React.FC<{
   return (
     <button
       onClick={onClick}
-      className={`inline-flex items-center justify-center gap-2 rounded-full font-bold transition-all duration-300 active:scale-95 ${variants[variant]} ${sizes[size]} ${className}`}
+      disabled={disabled}
+      className={`inline-flex items-center justify-center gap-2 rounded-full font-bold transition-all duration-300 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 ${variants[variant]} ${sizes[size]} ${className}`}
     >
       {icon}
       {children}
