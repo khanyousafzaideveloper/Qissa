@@ -1,16 +1,22 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Landing } from './components/Landing';
+import { MyStories } from './components/MyStories';
 import { StoryCreator } from './components/StoryCreator';
 import { StoryReader } from './components/StoryReader';
 import { StoryQuiz } from './components/StoryQuiz';
+import { StoryGenerationError } from './components/StoryGenerationError';
+import { IllustrationChoice } from './components/IllustrationChoice';
 import { Logo, Button, Card, FloatingDecor } from './components/ui';
 import { PARENT_PURPOSES, StoryConfig, StoryData } from './data/storyData';
 import { generateStory } from './data/generateStory';
+import { generateIllustrations } from './data/illustrations';
+import { deleteStory, loadStories, saveStory, setStoryFavorite, SavedStory } from './data/storyHistory';
 import { Heart, ArrowLeft, Moon, School, Share2, ShieldCheck, Sparkles } from 'lucide-react';
 
-type View = 'landing' | 'creator' | 'loading' | 'reader' | 'quiz' | 'parent';
+type View = 'landing' | 'creator' | 'loading' | 'generation-error' | 'illustrations' | 'reader' | 'quiz' | 'parent' | 'stories';
+type GenerationResult = Awaited<ReturnType<typeof generateStory>>;
 
-const PARENT_ICONS: Record<string, React.FC<any>> = {
+const PARENT_ICONS: Record<string, React.ElementType> = {
   darkness: Moon,
   school: School,
   sharing: Share2,
@@ -21,14 +27,81 @@ function App() {
   const [view, setView] = useState<View>('landing');
   const [config, setConfig] = useState<StoryConfig | null>(null);
   const [story, setStory] = useState<StoryData | null>(null);
+  const [storyProvider, setStoryProvider] = useState<GenerationResult['provider'] | null>(null);
+  const [pendingResult, setPendingResult] = useState<GenerationResult | null>(null);
+  const [loadingStep, setLoadingStep] = useState(0);
+  const [savedStories, setSavedStories] = useState<SavedStory[]>([]);
   const [parentPurpose, setParentPurpose] = useState<string | undefined>(undefined);
+  const [chapterProgress, setChapterProgress] = useState<{ status: 'generating' | 'complete' | 'failed'; count: number }>({ status: 'generating', count: 0 });
+
+  useEffect(() => {
+    setSavedStories(loadStories());
+  }, []);
+
+  useEffect(() => {
+    if (view !== 'loading') return undefined;
+    const timer = window.setInterval(() => setLoadingStep((step) => (step + 1) % 3), 1800);
+    return () => window.clearInterval(timer);
+  }, [view]);
+
+  const finishStory = (result: GenerationResult, cfg: StoryConfig) => {
+    setSavedStories(saveStory(result.story, cfg, result.provider));
+    setStory(result.story);
+    setStoryProvider(result.provider);
+    setPendingResult(null);
+    setView('reader');
+  };
+
+  const openGeneratedStory = (result: GenerationResult, cfg: StoryConfig) => {
+    if (result.provider === 'template') {
+      finishStory(result, cfg);
+      return;
+    }
+    setPendingResult(result);
+    setView('illustrations');
+  };
 
   const handleCreate = async (cfg: StoryConfig) => {
     setConfig(cfg);
+    setPendingResult(null);
+    setLoadingStep(0);
+    setChapterProgress({ status: 'generating', count: 0 });
     setView('loading');
-    const { story } = await generateStory(cfg);
-    setStory(story);
+    const result = await generateStory(cfg, (status, count) => {
+      setChapterProgress({ status, count });
+    });
+    openGeneratedStory(result, cfg);
+  };
+
+  const handleUseOfflineStory = () => {
+    if (config && pendingResult) finishStory(pendingResult, config);
+  };
+
+  const handleGenerateIllustrations = async () => {
+    if (!config || !pendingResult) return;
+    const story = await generateIllustrations(pendingResult.story);
+    finishStory({ ...pendingResult, story }, config);
+  };
+
+  const handleSkipIllustrations = () => {
+    if (config && pendingResult) finishStory(pendingResult, config);
+  };
+
+  const handleOpenStory = (entry: SavedStory) => {
+    setConfig(entry.config);
+    setStory(entry.story);
+    setStoryProvider(entry.provider);
     setView('reader');
+  };
+
+  const handleToggleFavorite = (entry: SavedStory) => {
+    setSavedStories(setStoryFavorite(entry.id, !entry.favorite));
+  };
+
+  const handleDeleteStory = (entry: SavedStory) => {
+    if (window.confirm(`Delete "${entry.story.title.en}" from this device?`)) {
+      setSavedStories(deleteStory(entry.id));
+    }
   };
 
   const handleParentSelect = (purposeId: string) => {
@@ -49,6 +122,20 @@ function App() {
       <Landing
         onCreate={() => { setParentPurpose(undefined); setView('creator'); }}
         onParentMode={() => setView('parent')}
+        onMyStories={() => setView('stories')}
+      />
+    );
+  }
+
+  if (view === 'stories') {
+    return (
+      <MyStories
+        stories={savedStories}
+        onCreate={() => { setParentPurpose(undefined); setView('creator'); }}
+        onOpen={handleOpenStory}
+        onToggleFavorite={handleToggleFavorite}
+        onDelete={handleDeleteStory}
+        onHome={() => setView('landing')}
       />
     );
   }
@@ -116,12 +203,60 @@ function App() {
   }
 
   if (view === 'loading') {
+    const loadingMessages = [
+      ['Finding a bright idea', 'اچھی کہانی کا خیال آ رہا ہے'],
+      ['Adding a little wonder', 'کہانی میں جادو شامل ہو رہا ہے'],
+      ['Polishing the pages', 'صفحات تیار ہو رہے ہیں'],
+    ];
+    const expectedChapters = config?.storyLength === 'short' ? 6 : config?.storyLength === 'medium' ? 12 : 20;
+    const progressPercent = expectedChapters > 0 ? Math.min(100, (chapterProgress.count / expectedChapters) * 100) : 0;
+    
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-gradient-to-b from-sky2-900 via-sky2-800 to-indigo-900 px-4 text-center">
+      <div className="min-h-screen flex flex-col items-center justify-center gap-6 bg-gradient-to-b from-sky2-900 via-sky2-800 to-indigo-900 px-4 text-center">
         <Sparkles className="w-12 h-12 text-saffron-300 animate-bounce-soft" />
-        <h1 className="text-2xl font-extrabold text-white">Writing {config?.childName}'s story…</h1>
-        <p className="font-urdu text-xl text-white/80" dir="rtl">کہانی لکھی جا رہی ہے</p>
+        <h1 className="text-2xl font-extrabold text-white">{loadingMessages[loadingStep][0]}</h1>
+        <p className="font-urdu text-xl text-white/80" dir="rtl">{loadingMessages[loadingStep][1]}</p>
+        <p className="text-sm text-white/60">Writing {config?.childName}&apos;s story…</p>
+        
+        {/* Chapter progress bar */}
+        {chapterProgress.count > 0 && (
+          <div className="w-full max-w-xs">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold text-white/70">Progress</span>
+              <span className="text-xs font-semibold text-saffron-300">{chapterProgress.count}/{expectedChapters}</span>
+            </div>
+            <div className="h-2 w-full rounded-full bg-white/20 overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-saffron-400 to-saffron-300 transition-all duration-300"
+                style={{ width: `${progressPercent}%` }}
+              />
+            </div>
+          </div>
+        )}
       </div>
+    );
+  }
+
+  if (view === 'generation-error') {
+    return (
+      <StoryGenerationError
+        childName={config?.childName}
+        reason={pendingResult?.fallbackReason}
+        onRetry={() => config && handleCreate(config)}
+        onUseOffline={handleUseOfflineStory}
+        onBack={() => { setPendingResult(null); setView('creator'); }}
+      />
+    );
+  }
+
+  if (view === 'illustrations' && pendingResult) {
+    return (
+      <IllustrationChoice
+        story={pendingResult.story}
+        onGenerate={handleGenerateIllustrations}
+        onSkip={handleSkipIllustrations}
+        onBack={() => { setPendingResult(null); setView('creator'); }}
+      />
     );
   }
 
@@ -130,6 +265,7 @@ function App() {
       <StoryReader
         story={story}
         config={config}
+        isOffline={storyProvider === 'template'}
         onComplete={handleQuizComplete}
         onHome={() => setView('landing')}
       />

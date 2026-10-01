@@ -1,93 +1,91 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Logo, Button, Card, FloatingDecor } from './ui';
+import { Logo, Card } from './ui';
 import { ILLUSTRATION_MAP, AvatarSvg, StarTwinkle } from './Illustrations';
-import { StoryData, StoryConfig, Language } from '../data/storyData';
-import { ArrowLeft, ArrowRight, Volume2, Pause, Globe, Home, Sparkles, Star } from 'lucide-react';
+import { StoryData, StoryConfig, Language, LANGUAGE_META, languageKey, isRtlLanguage } from '../data/storyData';
+import { ArrowLeft, ArrowRight, Volume2, Pause, Square, Globe, Home, Sparkles, Star, CloudOff, Zap } from 'lucide-react';
+import { useNarration } from '../lib/tts/useNarration';
 
 interface ReaderProps {
   story: StoryData;
   config: StoryConfig;
   onComplete: () => void;
   onHome: () => void;
+  isOffline?: boolean;
 }
 
-export const StoryReader: React.FC<ReaderProps> = ({ story, config, onComplete, onHome }) => {
-  const [pageIdx, setPageIdx] = useState(0);
+const LANGUAGES: Language[] = ['english', 'urdu', 'pashto'];
+
+function nextLanguage(language: Language): Language {
+  const index = LANGUAGES.indexOf(language);
+  return LANGUAGES[(index + 1) % LANGUAGES.length];
+}
+
+export const StoryReader: React.FC<ReaderProps> = ({ story, config, onComplete, onHome, isOffline = false }) => {
+  const [pageIdx, setPageIdx] = useState(() => {
+    const saved = localStorage.getItem(`qissa-last-read-${story.title.en}`);
+    return saved ? Math.min(parseInt(saved, 10), story.pages.length - 1) : 0;
+  });
   const [lang, setLang] = useState<Language>(config.language);
+  const [secondaryLang, setSecondaryLang] = useState<Language>(nextLanguage(config.language));
   const [showBilingual, setShowBilingual] = useState(true);
-  const [isNarrating, setIsNarrating] = useState(false);
   const [highlightedWord, setHighlightedWord] = useState(-1);
   const [chosenPath, setChosenPath] = useState<number[]>([0]);
-  const narrationTimer = useRef<ReturnType<typeof setInterval> | null>(null);
-  const wordsRef = useRef<string[]>([]);
+  const [autoReadEnabled, setAutoReadEnabled] = useState(() => {
+    const saved = localStorage.getItem('qissa-auto-read');
+    return saved ? JSON.parse(saved) : false;
+  });
+  const [useServerVoice, setUseServerVoice] = useState(() => {
+    const saved = localStorage.getItem('qissa-use-server-voice');
+    return saved ? JSON.parse(saved) : false;
+  });
 
   const page = story.pages[pageIdx];
   const Scene = ILLUSTRATION_MAP[page.illustration] || ILLUSTRATION_MAP.mountain;
 
-  const text = lang === 'urdu' ? page.textUrdu : page.text;
-  const isUrdu = lang === 'urdu';
+  const text = page.text[languageKey(lang)];
+  const secondaryText = page.text[languageKey(secondaryLang)];
+  const isRtl = isRtlLanguage(lang);
+  const secondaryIsRtl = isRtlLanguage(secondaryLang);
+  const textFontClass = isRtl ? 'font-script' : '';
   const words = text.split(/\s+/);
-  wordsRef.current = words;
 
-  const stopNarration = useCallback(() => {
-    if (narrationTimer.current) {
-      clearInterval(narrationTimer.current);
-      narrationTimer.current = null;
+  // Use the new narration hook
+  const narration = useNarration(text, lang, useServerVoice);
+
+  // Auto-read on page load if enabled and not reduced motion
+  useEffect(() => {
+    if (autoReadEnabled && narration.status === 'idle' && !narration.prefersReducedMotion) {
+      narration.play();
     }
-    setIsNarrating(false);
-    setHighlightedWord(-1);
-  }, []);
+  }, [pageIdx, autoReadEnabled, narration]);
 
-  const startNarration = useCallback(() => {
-    stopNarration();
-    setIsNarrating(true);
-    setHighlightedWord(0);
-    let i = 0;
-    const w = wordsRef.current;
-    const speed = isUrdu ? 500 : 350;
-    narrationTimer.current = setInterval(() => {
-      i++;
-      if (i >= w.length) {
-        if (narrationTimer.current) clearInterval(narrationTimer.current);
-        narrationTimer.current = null;
-        setIsNarrating(false);
-        setHighlightedWord(-1);
-      } else {
-        setHighlightedWord(i);
-      }
-    }, speed);
-  }, [isUrdu, stopNarration]);
+  // Save preferences to localStorage
+  useEffect(() => {
+    localStorage.setItem('qissa-auto-read', JSON.stringify(autoReadEnabled));
+  }, [autoReadEnabled]);
 
   useEffect(() => {
-    stopNarration();
-  }, [pageIdx, lang, stopNarration]);
+    localStorage.setItem('qissa-use-server-voice', JSON.stringify(useServerVoice));
+  }, [useServerVoice]);
 
-  useEffect(() => () => stopNarration(), [stopNarration]);
+  const handlePrimaryLanguage = (next: Language) => {
+    if (next === secondaryLang) setSecondaryLang(lang);
+    setLang(next);
+  };
 
-  // Speech synthesis narration
-  const speakNarration = useCallback(() => {
-    if ('speechSynthesis' in window) {
-      if (isNarrating) {
-        speechSynthesis.cancel();
-        stopNarration();
-        return;
-      }
-      const utter = new SpeechSynthesisUtterance(text);
-      utter.lang = isUrdu ? 'ur-PK' : 'en-US';
-      utter.rate = 0.7;
-      utter.pitch = 1.1;
-      speechSynthesis.speak(utter);
-      startNarration();
-      utter.onend = () => stopNarration();
-    } else {
-      startNarration();
-    }
-  }, [text, isUrdu, isNarrating, startNarration, stopNarration]);
+  const handleSecondaryLanguage = (next: Language) => {
+    if (next !== lang) setSecondaryLang(next);
+  };
 
   const handleChoice = (nextPage: number) => {
     setChosenPath([...chosenPath, nextPage]);
     setPageIdx(nextPage);
   };
+
+  // Save last-read position
+  useEffect(() => {
+    localStorage.setItem(`qissa-last-read-${story.title.en}`, String(pageIdx));
+  }, [pageIdx, story.title.en]);
 
   const isLastPage = pageIdx === story.pages.length - 1 || (page.choices === undefined && pageIdx >= story.pages.length - 1);
   const canGoNext = !page.choices && pageIdx < story.pages.length - 1;
@@ -105,16 +103,25 @@ export const StoryReader: React.FC<ReaderProps> = ({ story, config, onComplete, 
             <span className="font-display text-lg font-bold text-white">Qissa</span>
           </button>
           <div className="flex items-center gap-2">
-            {/* Language toggle */}
+            {/* Primary language */}
             <div className="flex rounded-full bg-white/10 p-1">
-              <button
-                onClick={() => setLang('english')}
-                className={`rounded-full px-3 py-1 text-xs font-bold transition-all ${lang === 'english' ? 'bg-white text-saffron-600' : 'text-white/70'}`}
-              >EN</button>
-              <button
-                onClick={() => setLang('urdu')}
-                className={`rounded-full px-3 py-1 text-xs font-bold transition-all ${lang === 'urdu' ? 'bg-white text-emerald2-600' : 'text-white/70'}`}
-              >اردو</button>
+              {LANGUAGES.map((language) => (
+                <button
+                  key={language}
+                  onClick={() => handlePrimaryLanguage(language)}
+                  className={`rounded-full px-2.5 py-1 text-xs font-bold transition-all ${lang === language ? 'bg-white text-saffron-600' : 'text-white/70'}`}
+                >{LANGUAGE_META[language].native}</button>
+              ))}
+            </div>
+            {/* Secondary language */}
+            <div className="hidden rounded-full bg-white/10 p-1 sm:flex">
+              {LANGUAGES.filter((language) => language !== lang).map((language) => (
+                <button
+                  key={language}
+                  onClick={() => handleSecondaryLanguage(language)}
+                  className={`rounded-full px-2 py-1 text-xs font-bold transition-all ${secondaryLang === language ? 'bg-white/30 text-white' : 'text-white/60'}`}
+                >{LANGUAGE_META[language].native}</button>
+              ))}
             </div>
             {/* Bilingual toggle */}
             <button
@@ -128,13 +135,32 @@ export const StoryReader: React.FC<ReaderProps> = ({ story, config, onComplete, 
             </button>
           </div>
         </div>
+        
+        {/* Progress bar */}
+        <div className="mx-auto max-w-5xl px-4 py-2">
+          <div className="h-1 w-full rounded-full bg-white/10 overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-saffron-400 to-rose2-400 transition-all duration-300"
+              style={{ width: `${((pageIdx + 1) / story.pages.length) * 100}%` }}
+            />
+          </div>
+          <div className="mt-2 flex items-center justify-between text-xs text-white/60">
+            <span>Page {pageIdx + 1} of {story.pages.length}</span>
+            <span>{Math.round(((pageIdx + 1) / story.pages.length) * 100)}%</span>
+          </div>
+        </div>
       </nav>
 
       <div className="mx-auto max-w-4xl px-4 py-6">
         {/* Story title */}
         <div className="mb-4 text-center">
-          <h1 className={`text-2xl font-extrabold text-white text-shadow-soft ${isUrdu ? 'font-urdu' : ''}`} dir={isUrdu ? 'rtl' : 'ltr'}>
-            {isUrdu ? story.titleUrdu : story.title}
+          {isOffline && (
+            <span className="mb-3 inline-flex items-center gap-1.5 rounded-full bg-amber2-100 px-3 py-1 text-xs font-bold text-amber2-800">
+              <CloudOff className="h-3.5 w-3.5" /> Offline story
+            </span>
+          )}
+          <h1 className={`text-2xl font-extrabold text-white text-shadow-soft ${textFontClass}`} dir={isRtl ? 'rtl' : 'ltr'}>
+            {story.title[languageKey(lang)]}
           </h1>
         </div>
 
@@ -143,7 +169,11 @@ export const StoryReader: React.FC<ReaderProps> = ({ story, config, onComplete, 
           <Card className="overflow-hidden">
             {/* Illustration */}
             <div className="relative h-56 overflow-hidden sm:h-72">
-              <IllustrationComponent className="w-full h-full" />
+              {page.imageUrl ? (
+                <img src={page.imageUrl} alt="Story scene" className="h-full w-full object-cover" />
+              ) : (
+                <IllustrationComponent className="w-full h-full" />
+              )}
               {/* Avatar overlay */}
               <div className="absolute bottom-3 right-3 animate-bounce-soft">
                 <div className="rounded-full bg-white/80 p-1.5 backdrop-blur-sm">
@@ -152,18 +182,18 @@ export const StoryReader: React.FC<ReaderProps> = ({ story, config, onComplete, 
               </div>
               {/* Page number */}
               <div className="absolute bottom-3 left-3 rounded-full bg-white/80 px-3 py-1 text-sm font-bold text-gray-700 backdrop-blur-sm">
-                Page {pageIdx + 1}
+                Chapter {pageIdx + 1}
               </div>
               {/* Floating stars for ambiance */}
               <StarTwinkle className="absolute top-4 right-8 animate-twinkle" size={16} color="#fef3c7" />
-              <StarTwinkle className="absolute top-8 right-20 animate-twinkle" size={12} color="#fff" style={{ animationDelay: '1s' } as any} />
+              <StarTwinkle className="absolute top-8 right-20 animate-twinkle" size={12} color="#fff" style={{ animationDelay: '1s' } as React.CSSProperties} />
             </div>
 
             {/* Text area */}
             <div className="bg-gradient-to-b from-white to-saffron-50 p-6 sm:p-8">
               {/* Primary language */}
-              <div className={isUrdu ? 'font-urdu' : ''} dir={isUrdu ? 'rtl' : 'ltr'}>
-                <p className={`text-xl leading-loose ${isUrdu ? 'text-right text-2xl' : ''}`}>
+              <div className={textFontClass} dir={isRtl ? 'rtl' : 'ltr'}>
+                <p className={`text-xl leading-loose ${isRtl ? 'text-right text-2xl' : ''}`}>
                   {words.map((w, i) => (
                     <span
                       key={i}
@@ -181,26 +211,167 @@ export const StoryReader: React.FC<ReaderProps> = ({ story, config, onComplete, 
 
               {/* Bilingual second language */}
               {showBilingual && (
-                <div className={`mt-4 border-t-2 border-dashed border-saffron-200 pt-4 ${!isUrdu ? 'font-urdu' : ''}`} dir={!isUrdu ? 'rtl' : 'ltr'}>
-                  <p className={`text-lg leading-loose text-gray-600 ${!isUrdu ? 'text-right text-xl' : ''}`}>
-                    {!isUrdu ? page.textUrdu : page.text}
+                <div className={`mt-4 border-t-2 border-dashed border-saffron-200 pt-4 ${secondaryIsRtl ? 'font-script' : ''}`} dir={secondaryIsRtl ? 'rtl' : 'ltr'}>
+                  <p className={`text-lg leading-loose text-gray-600 ${secondaryIsRtl ? 'text-right text-xl' : ''}`}>
+                    {secondaryText}
                   </p>
                 </div>
               )}
 
               {/* Narration controls */}
-              <div className="mt-6 flex items-center justify-center gap-3">
-                <button
-                  onClick={speakNarration}
-                  className={`flex items-center gap-2 rounded-full px-5 py-2.5 font-bold transition-all duration-300 ${
-                    isNarrating
-                      ? 'bg-rose2-100 text-rose2-600 ring-2 ring-rose2-300'
-                      : 'bg-saffron-100 text-saffron-700 hover:bg-saffron-200'
-                  }`}
-                >
-                  {isNarrating ? <Pause className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
-                  {isNarrating ? 'Stop' : 'Read to me'}
-                </button>
+              <div className="mt-6 space-y-3">
+                {/* Status message */}
+                {narration.status === 'unsupported' && (
+                  <p className="text-center text-sm text-amber2-600 font-semibold">
+                    Read-aloud is not supported in your browser.
+                  </p>
+                )}
+                {narration.status === 'no-voice' && (
+                  <div className="rounded-lg bg-sky2-50 p-3 text-sm text-sky2-800">
+                    <p className="font-semibold mb-2">Voice not installed for {LANGUAGE_META[lang].label}</p>
+                    <p className="text-xs mb-2">Try Microsoft Edge, or install the language voice in system settings.</p>
+                    {useServerVoice && (
+                      <p className="text-xs text-saffron-700">Using AI voice service instead.</p>
+                    )}
+                  </div>
+                )}
+
+                {/* Main controls */}
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  {/* Play button */}
+                  <button
+                    onClick={() => narration.play()}
+                    disabled={narration.status === 'unsupported' || narration.status === 'playing'}
+                    className={`flex items-center gap-2 rounded-full px-5 py-2.5 font-bold transition-all duration-300 ${
+                      narration.status === 'playing'
+                        ? 'bg-rose2-100 text-rose2-600 ring-2 ring-rose2-300'
+                        : narration.status === 'unsupported' || narration.status === 'no-voice'
+                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                        : 'bg-saffron-100 text-saffron-700 hover:bg-saffron-200'
+                    }`}
+                    aria-label="Play narration"
+                  >
+                    <Volume2 className="w-5 h-5" />
+                    {narration.status === 'playing' ? 'Playing...' : 'Read to me'}
+                  </button>
+
+                  {/* Pause button (only show when playing) */}
+                  {narration.status === 'playing' && (
+                    <button
+                      onClick={() => narration.pause()}
+                      className="flex items-center gap-2 rounded-full bg-amber2-100 px-4 py-2.5 font-bold text-amber2-700 transition-all hover:bg-amber2-200"
+                      aria-label="Pause narration"
+                    >
+                      <Pause className="w-4 h-4" />
+                    </button>
+                  )}
+
+                  {/* Resume button (only show when paused) */}
+                  {narration.status === 'paused' && (
+                    <>
+                      <button
+                        onClick={() => narration.resume()}
+                        className="flex items-center gap-2 rounded-full bg-emerald2-100 px-4 py-2.5 font-bold text-emerald2-700 transition-all hover:bg-emerald2-200"
+                        aria-label="Resume narration"
+                      >
+                        <Volume2 className="w-4 h-4" />
+                        Resume
+                      </button>
+                    </>
+                  )}
+
+                  {/* Stop button (only show when playing or paused) */}
+                  {(narration.status === 'playing' || narration.status === 'paused') && (
+                    <button
+                      onClick={() => narration.stop()}
+                      className="flex items-center gap-2 rounded-full bg-gray-200 px-4 py-2.5 font-bold text-gray-700 transition-all hover:bg-gray-300"
+                      aria-label="Stop narration"
+                    >
+                      <Square className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Speed selector */}
+                {narration.status !== 'unsupported' && (
+                  <div className="flex items-center justify-center gap-2">
+                    <span className="text-xs font-semibold text-gray-600">Speed:</span>
+                    {([0.7, 0.85, 1.0] as const).map((speed) => (
+                      <button
+                        key={speed}
+                        onClick={() => narration.setSpeed(speed)}
+                        className={`rounded-full px-3 py-1 text-xs font-bold transition-all ${
+                          narration.speed === speed
+                            ? 'bg-saffron-200 text-saffron-800'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
+                        aria-label={`Set speed to ${speed}x`}
+                      >
+                        {speed}x
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Voice picker */}
+                {narration.availableVoices.length > 0 && narration.status !== 'unsupported' && (
+                  <div className="flex items-center justify-center gap-2">
+                    <label className="text-xs font-semibold text-gray-600">Voice:</label>
+                    <select
+                      value={narration.selectedVoice?.name || ''}
+                      onChange={(e) => {
+                        const voice = narration.availableVoices.find((v) => v.name === e.target.value);
+                        if (voice) narration.setSelectedVoice(voice);
+                      }}
+                      className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-gray-700 border border-gray-300 shadow-sm"
+                      aria-label="Select voice"
+                    >
+                      {narration.availableVoices.map((voice) => (
+                        <option key={voice.name} value={voice.name}>
+                          {voice.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Auto-read toggle */}
+                <div className="flex items-center justify-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="auto-read-toggle"
+                    checked={autoReadEnabled}
+                    onChange={(e) => setAutoReadEnabled(e.target.checked)}
+                    className="w-4 h-4 rounded"
+                    aria-label="Enable auto-read on page load"
+                  />
+                  <label htmlFor="auto-read-toggle" className="text-xs font-semibold text-gray-700 cursor-pointer">
+                    Auto-read each page
+                  </label>
+                </div>
+
+                {/* Server voice toggle (parent mode only) */}
+                {!narration.prefersReducedMotion && (
+                  <div className="flex items-center justify-center gap-2 border-t pt-2">
+                    <input
+                      type="checkbox"
+                      id="server-voice-toggle"
+                      checked={useServerVoice}
+                      onChange={(e) => setUseServerVoice(e.target.checked)}
+                      className="w-4 h-4 rounded"
+                      aria-label="Use AI voice service"
+                    />
+                    <label htmlFor="server-voice-toggle" className="text-xs font-semibold text-gray-700 cursor-pointer flex items-center gap-1">
+                      <Zap className="w-3 h-3" />
+                      Use AI voice
+                    </label>
+                  </div>
+                )}
+                {useServerVoice && (
+                  <p className="text-center text-xs text-gray-500 italic">
+                    The story text, including your child's name, is sent to a voice service to create audio.
+                  </p>
+                )}
               </div>
 
               {/* "What happens next?" choices */}
@@ -221,10 +392,10 @@ export const StoryReader: React.FC<ReaderProps> = ({ story, config, onComplete, 
                           {i + 1}
                         </div>
                         <div>
-                          <div className="font-bold text-gray-800">{isUrdu ? choice.textUrdu : choice.text}</div>
+                          <div className={`font-bold text-gray-800 ${isRtl ? 'font-script' : ''}`} dir={isRtl ? 'rtl' : 'ltr'}>{choice.text[languageKey(lang)]}</div>
                           {showBilingual && (
-                            <div className={`mt-0.5 text-sm text-gray-500 ${isUrdu ? '' : 'font-urdu'}`} dir={isUrdu ? 'ltr' : 'rtl'}>
-                              {isUrdu ? choice.text : choice.textUrdu}
+                            <div className={`mt-0.5 text-sm text-gray-500 ${secondaryIsRtl ? 'font-script' : ''}`} dir={secondaryIsRtl ? 'rtl' : 'ltr'}>
+                              {choice.text[languageKey(secondaryLang)]}
                             </div>
                           )}
                         </div>

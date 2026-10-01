@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Logo, Button, Card, FloatingDecor } from './ui';
 import { AvatarSvg } from './Illustrations';
-import { AVATARS, SETTINGS, LESSONS, PARENT_PURPOSES, Language, StoryConfig, Avatar, StorySetting, StoryLesson } from '../data/storyData';
+import { AVATARS, SETTINGS, LESSONS, PARENT_PURPOSES, Language, StoryConfig, Avatar, StorySetting, StoryLesson, StoryLength, STORY_LENGTHS } from '../data/storyData';
 import { ArrowLeft, ArrowRight, Check, Heart, Globe, User, MapPin, Sparkles, Star, BookOpen } from 'lucide-react';
 
 interface CreatorProps {
@@ -10,11 +10,12 @@ interface CreatorProps {
   initialParentPurpose?: string;
 }
 
-const STEPS = ['name', 'avatar', 'language', 'setting', 'lesson', 'review'] as const;
+const STEPS = ['name', 'avatar', 'language', 'length', 'setting', 'lesson', 'review'] as const;
 const STEP_LABELS = [
   { label: 'Child Name', icon: User },
   { label: 'Avatar', icon: Sparkles },
   { label: 'Language', icon: Globe },
+  { label: 'Length', icon: BookOpen },
   { label: 'Setting', icon: MapPin },
   { label: 'Lesson', icon: Heart },
   { label: 'Review', icon: BookOpen },
@@ -31,17 +32,19 @@ export const StoryCreator: React.FC<CreatorProps> = ({ onComplete, onBack, initi
   const [name, setName] = useState('');
   const [avatar, setAvatar] = useState<Avatar | null>(null);
   const [language, setLanguage] = useState<Language>('urdu');
+  const [storyLength, setStoryLength] = useState<StoryLength>('medium');
   const [setting, setSetting] = useState<StorySetting | null>(null);
   const [lesson, setLesson] = useState<StoryLesson | null>(null);
-  const [parentPurpose, setParentPurpose] = useState<string | undefined>(initialParentPurpose);
+  const [parentPurpose] = useState<string | undefined>(initialParentPurpose);
 
   const canProceed = () => {
     if (step === 0) return name.trim().length > 0;
     if (step === 1) return avatar !== null;
     if (step === 2) return language !== null;
-    if (step === 3) return setting !== null;
-    if (step === 4) return lesson !== null;
-    if (step === 5) return true;
+    if (step === 3) return storyLength !== null;
+    if (step === 4) return setting !== null;
+    if (step === 5) return lesson !== null;
+    if (step === 6) return true;
     return false;
   };
 
@@ -50,7 +53,7 @@ export const StoryCreator: React.FC<CreatorProps> = ({ onComplete, onBack, initi
       setStep(step + 1);
     } else {
       if (avatar && setting && lesson) {
-        onComplete({ childName: name.trim(), avatar, language, hero: name.trim(), setting, lesson, parentPurpose });
+        onComplete({ childName: name.trim(), avatar, language, hero: name.trim(), setting, lesson, parentPurpose, storyLength });
       }
     }
   };
@@ -186,6 +189,41 @@ export const StoryCreator: React.FC<CreatorProps> = ({ onComplete, onBack, initi
 
           {step === 3 && (
             <div className="text-center">
+              <h2 className="text-3xl font-extrabold text-gray-800">How long should the story be?</h2>
+              <p className="mt-2 text-gray-600">Choose your favorite length! You can always come back for more adventures.</p>
+              <div className="mt-8 grid gap-4 sm:grid-cols-3">
+                {(Object.entries(STORY_LENGTHS) as Array<[StoryLength, typeof STORY_LENGTHS[StoryLength]]>).map(([len, config]) => (
+                  <button
+                    key={len}
+                    onClick={() => setStoryLength(len)}
+                    className={`rounded-3xl p-6 transition-all duration-300 ${
+                      storyLength === len
+                        ? 'bg-gradient-to-br from-saffron-500 to-rose2-500 text-white shadow-xl scale-105 ring-4 ring-saffron-300'
+                        : 'bg-white/60 shadow-md ring-1 ring-saffron-100 hover:shadow-lg hover:scale-105 text-gray-800'
+                    }`}
+                  >
+                    <div className="text-4xl mb-2">
+                      {len === 'short' && '📖'}
+                      {len === 'medium' && '📚'}
+                      {len === 'long' && '📕'}
+                    </div>
+                    <div className="text-xl font-extrabold mb-2">
+                      {len === 'short' && 'Short'}
+                      {len === 'medium' && 'Medium'}
+                      {len === 'long' && 'Long'}
+                    </div>
+                    <div className={`text-sm ${storyLength === len ? 'text-white/90' : 'text-gray-600'}`}>
+                      {config.pages} pages<br/>
+                      {config.quizQuestions} questions
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {step === 4 && (
+            <div className="text-center">
               <h2 className="text-3xl font-extrabold text-gray-800">Where should the story happen?</h2>
               <p className="mt-2 text-gray-600">Pick a familiar, magical place!</p>
               <div className="mt-8 grid gap-4 sm:grid-cols-2">
@@ -213,7 +251,7 @@ export const StoryCreator: React.FC<CreatorProps> = ({ onComplete, onBack, initi
             </div>
           )}
 
-          {step === 4 && (
+          {step === 5 && (
             <div className="text-center">
               <h2 className="text-3xl font-extrabold text-gray-800">What should {name || 'the hero'} learn?</h2>
               <p className="mt-2 text-gray-600">Every great story teaches something beautiful.</p>
@@ -247,7 +285,7 @@ export const StoryCreator: React.FC<CreatorProps> = ({ onComplete, onBack, initi
             </div>
           )}
 
-          {step === 5 && (
+          {step === 6 && (
             <div className="text-center">
               <h2 className="text-3xl font-extrabold text-gray-800">Ready for the adventure!</h2>
               <p className="mt-2 text-gray-600">Here's your story preview:</p>
@@ -261,6 +299,7 @@ export const StoryCreator: React.FC<CreatorProps> = ({ onComplete, onBack, initi
                 </div>
                 <div className="mt-4 space-y-2">
                   <div className="flex items-center gap-2 text-gray-700"><Globe className="w-5 h-5 text-sky2-500" /> {LANGUAGES.find(l => l.id === language)?.label}</div>
+                  <div className="flex items-center gap-2 text-gray-700"><BookOpen className="w-5 h-5 text-amber2-500" /> {STORY_LENGTHS[storyLength].label}</div>
                   <div className="flex items-center gap-2 text-gray-700"><MapPin className="w-5 h-5 text-emerald2-500" /> {setting?.label}</div>
                   <div className="flex items-center gap-2 text-gray-700"><Heart className="w-5 h-5 text-rose2-500" /> Lesson: {lesson?.label}</div>
                   {parentPurpose && (

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Logo, Button, Card, FloatingDecor } from './ui';
 import { AvatarSvg, StarTwinkle } from './Illustrations';
-import { StoryData, StoryConfig } from '../data/storyData';
+import { StoryData, StoryConfig, languageKey, isRtlLanguage, STORY_LENGTHS, inferStoryLength } from '../data/storyData';
 import { Check, X, Star, Download, Share2, Home, RotateCcw, Trophy, Sparkles } from 'lucide-react';
 
 interface QuizProps {
@@ -19,8 +19,15 @@ export const StoryQuiz: React.FC<QuizProps> = ({ story, config, onHome, onReplay
   const [stars, setStars] = useState(0);
   const [showStarAnim, setShowStarAnim] = useState(false);
 
-  const question = story.quiz[qIdx];
-  const isUrdu = config.language === 'urdu';
+  // Determine expected number of questions based on story length
+  const storyLength = story.length || inferStoryLength(story.pages.length);
+  const expectedQuestionsCount = STORY_LENGTHS[storyLength].quizQuestions;
+  
+  // Only show questions up to the expected count for this story length
+  const quizQuestions = story.quiz.slice(0, expectedQuestionsCount);
+  const question = quizQuestions[qIdx];
+  const isRtl = isRtlLanguage(config.language);
+  const language = languageKey(config.language);
 
   const handleAnswer = (idx: number) => {
     if (answered) return;
@@ -34,7 +41,7 @@ export const StoryQuiz: React.FC<QuizProps> = ({ story, config, onHome, onReplay
   };
 
   const handleNext = () => {
-    if (qIdx < story.quiz.length - 1) {
+    if (qIdx < quizQuestions.length - 1) {
       setQIdx(qIdx + 1);
       setSelected(null);
       setAnswered(false);
@@ -44,7 +51,7 @@ export const StoryQuiz: React.FC<QuizProps> = ({ story, config, onHome, onReplay
   };
 
   if (phase === 'reward') {
-    return <RewardScreen stars={stars} total={story.quiz.length} story={story} config={config} onHome={onHome} onReplay={onReplay} />;
+    return <RewardScreen stars={stars} total={quizQuestions.length} story={story} config={config} onHome={onHome} onReplay={onReplay} />;
   }
 
   return (
@@ -62,7 +69,7 @@ export const StoryQuiz: React.FC<QuizProps> = ({ story, config, onHome, onReplay
       <div className="mx-auto max-w-2xl px-4 py-8">
         {/* Stars earned */}
         <div className="mb-6 flex items-center justify-center gap-2">
-          {Array.from({ length: story.quiz.length }).map((_, i) => (
+          {Array.from({ length: quizQuestions.length }).map((_, i) => (
             <Star
               key={i}
               className={`w-8 h-8 transition-all duration-300 ${
@@ -75,7 +82,7 @@ export const StoryQuiz: React.FC<QuizProps> = ({ story, config, onHome, onReplay
         <div key={qIdx} className="animate-pop-in">
           <div className="mb-4 text-center">
             <span className="inline-flex items-center gap-2 rounded-full bg-amber2-100 px-4 py-1.5 text-sm font-bold text-amber2-700">
-              <Trophy className="w-4 h-4" /> Question {qIdx + 1} of {story.quiz.length}
+              <Trophy className="w-4 h-4" /> Question {qIdx + 1} of {quizQuestions.length}
             </span>
           </div>
 
@@ -83,8 +90,8 @@ export const StoryQuiz: React.FC<QuizProps> = ({ story, config, onHome, onReplay
             {/* Avatar + question */}
             <div className="mb-6 flex items-center gap-4">
               <AvatarSvg avatar={config.avatar} size={56} />
-              <h2 className={`text-2xl font-extrabold text-gray-800 ${isUrdu ? 'font-urdu' : ''}`} dir={isUrdu ? 'rtl' : 'ltr'}>
-                {isUrdu ? question.questionUrdu : question.question}
+              <h2 className={`text-2xl font-extrabold text-gray-800 ${isRtl ? 'font-script' : ''}`} dir={isRtl ? 'rtl' : 'ltr'}>
+                {question.question[language]}
               </h2>
             </div>
 
@@ -115,7 +122,7 @@ export const StoryQuiz: React.FC<QuizProps> = ({ story, config, onHome, onReplay
                        answered && isSelected ? <X className="w-5 h-5" /> :
                        String.fromCharCode(65 + i)}
                     </div>
-                    {opt}
+                    {opt[language]}
                   </button>
                 );
               })}
@@ -140,7 +147,7 @@ export const StoryQuiz: React.FC<QuizProps> = ({ story, config, onHome, onReplay
             {answered && (
               <div className="mt-6 text-center">
                 <Button onClick={handleNext} icon={<Sparkles className="w-5 h-5" />}>
-                  {qIdx < story.quiz.length - 1 ? 'Next Question' : 'See My Stars!'}
+                  {qIdx < quizQuestions.length - 1 ? 'Next Question' : 'See My Stars!'}
                 </Button>
               </div>
             )}
@@ -153,7 +160,7 @@ export const StoryQuiz: React.FC<QuizProps> = ({ story, config, onHome, onReplay
             <div className="relative">
               <Star className="w-32 h-32 text-amber2-400 fill-amber2-400 animate-pop-in drop-shadow-2xl" />
               <StarTwinkle className="absolute -top-4 -left-8 animate-twinkle" size={32} />
-              <StarTwinkle className="absolute -bottom-4 -right-8 animate-twinkle" size={28} style={{ animationDelay: '0.3s' } as any} />
+              <StarTwinkle className="absolute -bottom-4 -right-8 animate-twinkle" size={28} style={{ animationDelay: '0.3s' } as React.CSSProperties} />
             </div>
           </div>
         )}
@@ -190,15 +197,17 @@ const RewardScreen: React.FC<RewardProps> = ({ stars, total, story, config, onHo
     const pages = story.pages.map((p, i) => `
       <div style="page-break-after:always;margin-bottom:20px;">
         <h3 style="color:#c44407;">Page ${i + 1}</h3>
-        <p style="font-size:18px;line-height:1.8;">${p.text}</p>
-        <p style="font-size:16px;color:#666;direction:rtl;font-family:serif;">${p.textUrdu}</p>
+        <p style="font-size:18px;line-height:1.8;">${p.text.en}</p>
+        <p style="font-size:16px;color:#666;direction:rtl;font-family:serif;">${p.text.ur}</p>
+        <p style="font-size:16px;color:#666;direction:rtl;font-family:serif;">${p.text.ps}</p>
       </div>
     `).join('');
     win.document.write(`
-      <html><head><title>${story.title}</title></head>
+      <html><head><title>${story.title.en}</title></head>
       <body style="font-family:sans-serif;max-width:700px;margin:30px auto;padding:20px;">
-        <h1 style="color:#fb7a0f;text-align:center;">${story.title}</h1>
-        <h2 style="color:#666;text-align:center;direction:rtl;font-family:serif;">${story.titleUrdu}</h2>
+        <h1 style="color:#fb7a0f;text-align:center;">${story.title.en}</h1>
+        <h2 style="color:#666;text-align:center;direction:rtl;font-family:serif;">${story.title.ur}</h2>
+        <h2 style="color:#666;text-align:center;direction:rtl;font-family:serif;">${story.title.ps}</h2>
         <hr/>
         ${pages}
         <div style="text-align:center;margin-top:30px;">
@@ -212,17 +221,21 @@ const RewardScreen: React.FC<RewardProps> = ({ stars, total, story, config, onHo
   };
 
   const handleShare = async () => {
-    const shareText = `My child ${config.childName} just read "${story.title}" on Qissa and earned ${stars}/${total} stars! Create your own personalized story at Qissa.`;
+    const shareText = `My child ${config.childName} just read "${story.title[languageKey(config.language)]}" on Qissa and earned ${stars}/${total} stars! Create your own personalized story at Qissa.`;
     if (navigator.share) {
       try {
         await navigator.share({ title: 'Qissa Story', text: shareText });
-      } catch {}
+      } catch {
+        return;
+      }
     } else {
       try {
         await navigator.clipboard.writeText(shareText);
         setShared(true);
         setTimeout(() => setShared(false), 2000);
-      } catch {}
+      } catch {
+        return;
+      }
     }
   };
 
@@ -242,7 +255,7 @@ const RewardScreen: React.FC<RewardProps> = ({ stars, total, story, config, onHo
                 top: `${Math.random() * 100}%`,
                 left: `${Math.random() * 100}%`,
                 animationDelay: `${Math.random() * 2}s`,
-              } as any}
+              } as React.CSSProperties}
             />
           ))}
         </div>
@@ -265,7 +278,7 @@ const RewardScreen: React.FC<RewardProps> = ({ stars, total, story, config, onHo
               <Trophy className="w-14 h-14 text-white" />
             </div>
             <StarTwinkle className="absolute -top-2 -right-2 animate-twinkle" size={28} />
-            <StarTwinkle className="absolute -bottom-2 -left-2 animate-twinkle" size={24} style={{ animationDelay: '0.5s' } as any} />
+            <StarTwinkle className="absolute -bottom-2 -left-2 animate-twinkle" size={24} style={{ animationDelay: '0.5s' } as React.CSSProperties} />
           </div>
         </div>
 
@@ -291,9 +304,6 @@ const RewardScreen: React.FC<RewardProps> = ({ stars, total, story, config, onHo
             </div>
           ))}
         </div>
-        <p className="mt-4 text-2xl font-extrabold text-saffron-600">
-          {stars} / {total} stars!
-        </p>
 
         {/* Avatar celebration */}
         <div className="mt-8 flex justify-center animate-bounce-soft">
