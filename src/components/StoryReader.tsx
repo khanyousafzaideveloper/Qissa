@@ -93,12 +93,12 @@ export const StoryReader: React.FC<ReaderProps> = ({ story, config, onComplete, 
       <FloatingDecor />
       {/* Header */}
       <nav className="sticky top-0 z-50 bg-sky2-600 border-b border-white/20 shadow-md">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
-          <button onClick={onHome} className="flex items-center gap-2 text-white">
+        <div className="mx-auto flex max-w-5xl items-center justify-between gap-2 px-3 py-3 sm:px-4">
+          <button onClick={onHome} aria-label="Qissa home" className="flex shrink-0 items-center gap-2 text-white">
             <Logo size={28} showText={false} />
-            <span className="font-display text-lg font-bold text-white">Qissa</span>
+            <span className="hidden font-display text-lg font-bold text-white sm:inline">Qissa</span>
           </button>
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 items-center gap-1.5 sm:gap-2">
             {/* Primary language */}
             <div className="flex rounded-full bg-white/10 p-1">
               {LANGUAGES.map((language) => (
@@ -122,18 +122,20 @@ export const StoryReader: React.FC<ReaderProps> = ({ story, config, onComplete, 
             {/* Bilingual toggle */}
             <button
               onClick={() => setShowBilingual(!showBilingual)}
-              className={`flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-bold transition-all ${showBilingual ? 'bg-white/20 text-white' : 'bg-white/10 text-white/60'}`}
+              aria-label="Show second language"
+              aria-pressed={showBilingual}
+              className={`flex shrink-0 items-center gap-1.5 rounded-full p-2 text-xs font-bold transition-all sm:px-3 ${showBilingual ? 'bg-white/20 text-white' : 'bg-white/10 text-white/60'}`}
             >
-              <Globe className="w-4 h-4" /> Dual
+              <Globe className="w-4 h-4" /> <span className="hidden sm:inline">Dual</span>
             </button>
-            <button onClick={onHome} className="rounded-full bg-white/10 p-2 text-white/70 hover:bg-white/20 transition-colors">
+            <button onClick={onHome} aria-label="Home" className="shrink-0 rounded-full bg-white/10 p-2 text-white/70 hover:bg-white/20 transition-colors">
               <Home className="w-5 h-5" />
             </button>
           </div>
         </div>
         
         {/* Progress bar */}
-        <div className="mx-auto max-w-5xl px-4 py-2">
+        <div className="mx-auto max-w-5xl px-3 py-2 sm:px-4">
           <div className="h-2 w-full rounded-full bg-white/25 overflow-hidden">
             <div
               className="h-full rounded-full bg-gradient-to-r from-amber2-300 to-amber2-400 transition-all duration-300"
@@ -189,7 +191,7 @@ export const StoryReader: React.FC<ReaderProps> = ({ story, config, onComplete, 
             <div className="bg-gradient-to-b from-white to-sky2-50 p-6 sm:p-8">
               {/* Primary language */}
               <div className={textFontClass} dir={isRtl ? 'rtl' : 'ltr'}>
-                <p className={`text-xl leading-loose ${isRtl ? 'text-right text-2xl' : ''}`}>
+                <p className={`leading-loose ${isRtl ? 'text-right text-2xl md:text-3xl' : 'text-xl md:text-2xl'}`}>
                   {words.map((w, i) => (
                     <span
                       key={i}
@@ -208,7 +210,7 @@ export const StoryReader: React.FC<ReaderProps> = ({ story, config, onComplete, 
               {/* Bilingual second language */}
               {showBilingual && (
                 <div className={`mt-4 border-t-2 border-dashed border-sky2-200 pt-4 ${secondaryIsRtl ? 'font-script' : ''}`} dir={secondaryIsRtl ? 'rtl' : 'ltr'}>
-                  <p className={`text-lg leading-loose text-gray-600 ${secondaryIsRtl ? 'text-right text-xl' : ''}`}>
+                  <p className={`leading-loose text-gray-600 ${secondaryIsRtl ? 'text-right text-xl md:text-2xl' : 'text-lg md:text-xl'}`}>
                     {secondaryText}
                   </p>
                 </div>

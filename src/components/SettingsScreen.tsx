@@ -118,7 +118,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ preferences, isO
             <div className="grid grid-cols-3 gap-3">
               {LANGUAGES.map((l) => (
                 <button key={l} onClick={() => update('language', l)} className={choiceClass(draft.language === l)}>
-                  <div className={`text-2xl font-bold text-sky2-700 ${l === 'english' ? 'font-display' : 'font-script'}`}>{LANGUAGE_META[l].native}</div>
+                  <div className={`text-xl font-bold text-sky2-700 sm:text-2xl ${l === 'english' ? 'font-display' : 'font-script'}`}>{LANGUAGE_META[l].native}</div>
                   <div className="mt-1 text-xs font-bold text-gray-500">{LANGUAGE_META[l].label}</div>
                   {draft.language === l && <SelectedTick />}
                 </button>

@@ -55,7 +55,9 @@ export const Button: React.FC<{
   className?: string;
   icon?: React.ReactNode;
   disabled?: boolean;
-}> = ({ children, onClick, variant = 'primary', size = 'md', className = '', icon, disabled = false }) => {
+  /** Accessible name for buttons whose label is hidden on small screens. */
+  ariaLabel?: string;
+}> = ({ children, onClick, variant = 'primary', size = 'md', className = '', icon, disabled = false, ariaLabel }) => {
   const variants = {
     primary: 'bg-gradient-to-b from-sky2-400 to-sky2-600 text-white shadow-[0_5px_0_0_#1c6aa8] hover:brightness-110 active:translate-y-1 active:shadow-[0_1px_0_0_#1c6aa8]',
     secondary: 'bg-gradient-to-b from-amber2-300 to-amber2-400 text-amber2-900 shadow-[0_5px_0_0_#d97706] hover:brightness-105 active:translate-y-1 active:shadow-[0_1px_0_0_#d97706]',
@@ -67,6 +69,7 @@ export const Button: React.FC<{
     <button
       onClick={onClick}
       disabled={disabled}
+      aria-label={ariaLabel}
       className={`inline-flex items-center justify-center gap-2 rounded-full font-display font-bold tracking-wide transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-50 ${variants[variant]} ${sizes[size]} ${className}`}
     >
       {icon}
@@ -93,14 +96,14 @@ export const Toggle: React.FC<{ checked: boolean; onChange: (checked: boolean) =
   </button>
 );
 
-export const Logo: React.FC<{ size?: number; showText?: boolean; className?: string }> = ({ size = 40, showText = true, className = '' }) => (
+export const Logo: React.FC<{ size?: number; showText?: boolean; className?: string; tone?: 'dark' | 'light' }> = ({ size = 40, showText = true, className = '', tone = 'dark' }) => (
   <div className={`flex items-center gap-2 ${className}`}>
     <div className="relative">
       <BookLogo size={size} className="animate-float-slow" />
       <StarTwinkle className="absolute -top-1 -right-1 animate-twinkle" size={12} />
     </div>
     {showText && (
-      <span className="font-display text-2xl font-extrabold bg-gradient-to-r from-sky2-500 to-sky2-700 bg-clip-text text-transparent">
+      <span className={`font-display text-2xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r ${tone === 'light' ? 'from-white to-sky2-200' : 'from-sky2-500 to-sky2-700'}`}>
         Qissa
       </span>
     )}
