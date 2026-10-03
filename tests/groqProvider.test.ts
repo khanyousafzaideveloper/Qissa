@@ -58,9 +58,9 @@ describe('Groq provider', () => {
     const { POST, resetApiStateForTests } = await import('../api/story');
     resetApiStateForTests();
 
-    const fetchMock = vi.fn().mockImplementation((url: string) => {
+    const fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
       if (url.includes('api.groq.com')) {
-        const body = JSON.parse(arguments[1]?.body || '{}');
+        const body = JSON.parse(String(init?.body || '{}'));
         if (JSON.stringify(body).includes('dead-model')) {
           return Promise.resolve(new Response('{}', { status: 404 }));
         }
@@ -80,7 +80,6 @@ describe('Groq provider', () => {
     expect(firstBody.provider).toBe('groq');
     expect(firstBody.model).toBe('live-model');
 
-    const firstCallCount = fetchMock.mock.calls.length;
 
     // Second request should skip dead-model entirely
     const secondResponse = await POST(makeRequest());
@@ -243,7 +242,14 @@ describe('Groq provider', () => {
     const { POST, resetApiStateForTests } = await import('../api/story');
     resetApiStateForTests();
 
-    const fetchMock = vi.fn().mockResolvedValue(buildGroqSuccessResponse());
+    // A fresh Response per call (a body can only be read once), shaped for whichever provider is called.
+    const fetchMock = vi.fn().mockImplementation(async (url: string) => {
+      if (!url.includes('generativelanguage.googleapis.com')) return buildGroqSuccessResponse();
+      const groqShaped = await buildGroqSuccessResponse().json() as { choices: { message: { content: string } }[] };
+      return new Response(JSON.stringify({
+        candidates: [{ content: { parts: [{ text: groqShaped.choices[0].message.content }] }, finishReason: 'STOP' }],
+      }), { status: 200 });
+    });
     vi.stubGlobal('fetch', fetchMock);
     vi.spyOn(console, 'info').mockImplementation(() => undefined);
 
@@ -253,6 +259,7 @@ describe('Groq provider', () => {
     const body = await response.json() as { provider: string };
 
     expect(response.status).toBe(200);
+    expect(fetchMock.mock.calls[0][0]).toContain('generativelanguage.googleapis.com');
     // Should use Gemini first since AI_PROVIDER_ORDER=gemini,groq
     expect(body.provider).toBe('gemini');
   });

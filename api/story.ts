@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { SETTINGS, LESSONS, PARENT_PURPOSES, STORY_LENGTHS, inferStoryLength, buildStory, type StoryData, type StoryPage, type StoryLength } from '../src/data/storyData.js';
-import { createJob, completeJob, failJob, addChapter } from './story-status.js';
+import { AVATARS, SETTINGS, LESSONS, PARENT_PURPOSES, STORY_LENGTHS, buildStory, type LocalizedText, type StoryData, type StoryPage, type StoryLength } from '../src/data/storyData.js';
+import { choiceTargets, describeLayoutForPrompt } from '../src/lib/story-topology.js';
 
 const HERO = '{{HERO}}';
 const illustrationValues = ['mountain', 'village', 'bazaar', 'eid', 'forest', 'school', 'night', 'journey'] as const;
@@ -19,8 +19,7 @@ const GROQ_FALLBACK_MODELS = (process.env.GROQ_FALLBACK_MODELS || 'openai/gpt-os
   .split(',')
   .map((model) => model.trim())
   .filter(Boolean);
-const GROQ_TIMEOUT_MS = Math.min(Number(process.env.GROQ_TIMEOUT_MS || 20_000), 20_000);
-const GROQ_MAX_COMPLETION_TOKENS = 8_000; // gpt-oss reasoning tokens count toward limit
+const GROQ_TIMEOUT_MS = Number(process.env.GROQ_TIMEOUT_MS) || Infinity;
 
 // Gemini configuration
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
@@ -29,13 +28,22 @@ const GEMINI_FALLBACK_MODELS = (process.env.GEMINI_FALLBACK_MODELS || 'gemini-3.
   .split(',')
   .map((model) => model.trim())
   .filter(Boolean);
-const GEMINI_TIMEOUT_MS = Math.min(Number(process.env.GEMINI_TIMEOUT_MS || 25_000), 25_000);
+const GEMINI_TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS) || Infinity;
 const GEMINI_THINKING_LEVEL = process.env.GEMINI_THINKING_LEVEL || 'low';
 
 // Generation constraints
-const GENERATION_TOTAL_TIMEOUT_MS = Math.min(Number(process.env.GENERATION_TOTAL_TIMEOUT_MS || 60_000), 60_000);
-const GEMINI_MAX_OUTPUT_TOKENS = 4_096;
-const GEMINI_MAX_ATTEMPTS = 3;
+const GENERATION_TOTAL_TIMEOUT_MS = Number(process.env.GENERATION_TOTAL_TIMEOUT_MS) || Infinity;
+
+// A trilingual story is large (Urdu/Pashto script costs many tokens), so output budgets and
+// timeouts grow with length. The *_TIMEOUT_MS env vars can only lower these.
+const LENGTH_BUDGETS: Record<StoryLength, { outputTokens: number; attemptMs: number; totalMs: number }> = {
+  short: { outputTokens: 8_000, attemptMs: 30_000, totalMs: 60_000 },
+  medium: { outputTokens: 16_000, attemptMs: 50_000, totalMs: 100_000 },
+  long: { outputTokens: 28_000, attemptMs: 80_000, totalMs: 160_000 },
+};
+const attemptTimeoutMs = (length: StoryLength, envLimit: number) => Math.min(envLimit, LENGTH_BUDGETS[length].attemptMs);
+const totalTimeoutMs = (length: StoryLength) => Math.min(GENERATION_TOTAL_TIMEOUT_MS, LENGTH_BUDGETS[length].totalMs);
+const GEMINI_MAX_ATTEMPTS = 2; // one retry per model, then move on: a child is watching the loading screen
 const GROQ_MAX_ATTEMPTS = 3;
 const GEMINI_BACKOFF_BASE_MS = 1_000;
 const CACHE_TTL_MS = 5 * 60_000;
@@ -100,7 +108,8 @@ const ChoiceSchema = z.object({
 
 const ModelPageSchema = z.object({
   text: z.object({ en: z.string().trim().min(1), ur: z.string().trim().min(1), ps: z.string().trim().min(1) }).strict(),
-  illustration: z.enum(illustrationValues),
+  // Unknown scene names fall back to the setting's scene in normalizeStory instead of failing the story.
+  illustration: z.string(),
   choices: z.array(ChoiceSchema).optional(),
 }).strict();
 
@@ -116,44 +125,68 @@ export const ModelStorySchema = z.object({
   quiz: z.array(QuizQuestionSchema).min(3).max(5),
 }).strict();
 
-const GEMINI_RESPONSE_SCHEMA = {
-  type: 'OBJECT',
-  properties: {
-    title: { type: 'OBJECT', properties: { en: { type: 'STRING' }, ur: { type: 'STRING' }, ps: { type: 'STRING' } }, required: ['en', 'ur', 'ps'] },
-    pages: {
-      type: 'ARRAY', minItems: 6, maxItems: 6,
-      items: {
-        type: 'OBJECT',
-        properties: {
-          text: { type: 'OBJECT', properties: { en: { type: 'STRING' }, ur: { type: 'STRING' }, ps: { type: 'STRING' } }, required: ['en', 'ur', 'ps'] },
-          illustration: { type: 'STRING', enum: [...illustrationValues] },
-          choices: {
-            type: 'ARRAY', minItems: 0, maxItems: 2,
-            items: {
-              type: 'OBJECT',
-              properties: { text: { type: 'OBJECT', properties: { en: { type: 'STRING' }, ur: { type: 'STRING' }, ps: { type: 'STRING' } }, required: ['en', 'ur', 'ps'] } },
-              required: ['text'],
+const localizedSchema = {
+  type: 'object',
+  properties: { en: { type: 'string' }, ur: { type: 'string' }, ps: { type: 'string' } },
+  required: ['en', 'ur', 'ps'],
+  additionalProperties: false,
+};
+
+/** JSON Schema for a story of the given length, sent to Gemini (via toGeminiSchema), which enforces it while generating. */
+function storyJsonSchema(length: StoryLength): Record<string, unknown> {
+  const { pages: pageCount, quizQuestions } = STORY_LENGTHS[length];
+  const pages = { minItems: pageCount, maxItems: pageCount };
+  const quiz = { minItems: quizQuestions, maxItems: quizQuestions };
+  return {
+    type: 'object',
+    properties: {
+      title: localizedSchema,
+      pages: {
+        type: 'array', ...pages,
+        items: {
+          type: 'object',
+          properties: {
+            text: localizedSchema,
+            illustration: { type: 'string', enum: [...illustrationValues] },
+            // Always present (strict schemas need every field); empty on pages without choices.
+            choices: {
+              type: 'array', minItems: 0, maxItems: 2,
+              items: { type: 'object', properties: { text: localizedSchema }, required: ['text'], additionalProperties: false },
             },
           },
+          required: ['text', 'illustration', 'choices'],
+          additionalProperties: false,
         },
-        required: ['text', 'illustration'],
+      },
+      quiz: {
+        type: 'array', ...quiz,
+        items: {
+          type: 'object',
+          properties: {
+            question: localizedSchema,
+            options: { type: 'array', minItems: 3, maxItems: 3, items: localizedSchema },
+            answer: { type: 'integer' },
+          },
+          required: ['question', 'options', 'answer'],
+          additionalProperties: false,
+        },
       },
     },
-    quiz: {
-      type: 'ARRAY', minItems: 3, maxItems: 3,
-      items: {
-        type: 'OBJECT',
-        properties: {
-          question: { type: 'OBJECT', properties: { en: { type: 'STRING' }, ur: { type: 'STRING' }, ps: { type: 'STRING' } }, required: ['en', 'ur', 'ps'] },
-          options: { type: 'ARRAY', minItems: 3, maxItems: 3, items: { type: 'OBJECT', properties: { en: { type: 'STRING' }, ur: { type: 'STRING' }, ps: { type: 'STRING' } }, required: ['en', 'ur', 'ps'] } },
-          answer: { type: 'INTEGER' },
-        },
-        required: ['question', 'options', 'answer'],
-      },
-    },
-  },
-  required: ['title', 'pages', 'quiz'],
-} as const;
+    required: ['title', 'pages', 'quiz'],
+    additionalProperties: false,
+  };
+}
+
+/** Gemini's responseSchema is an OpenAPI subset: upper-case types, no additionalProperties. */
+function toGeminiSchema(node: unknown): unknown {
+  if (Array.isArray(node)) return node.map(toGeminiSchema);
+  if (!node || typeof node !== 'object') return node;
+  return Object.fromEntries(
+    Object.entries(node)
+      .filter(([key]) => key !== 'additionalProperties')
+      .map(([key, value]) => [key, key === 'type' && typeof value === 'string' ? value.toUpperCase() : toGeminiSchema(value)]),
+  );
+}
 
 // Banned terms: split into HARD-BAN (never allowed) and SOFT (allowed 1-2x if not repetitive/violent context)
 const HARD_BAN_TERMS = {
@@ -161,10 +194,8 @@ const HARD_BAN_TERMS = {
   ur: ['قتل', 'بندوق', 'چاقو'],
 } as const;
 
-const SOFT_TERMS = {
-  en: { 'blood': 'gentle mention allowed (e.g., scraped knee)' },
-  ur: { 'خون': 'gentle mention allowed' },
-} as const;
+// Frightening themes the prompt forbids for ages 4-8. "scary"/"afraid" stay allowed: fear-of-the-dark stories need them.
+const FRIGHTENING_THEMES = ['ghost', 'ghosts', 'demon', 'demons', 'horror', 'zombie', 'zombies', 'haunted'];
 
 interface GroqStoryResult {
   story: StoryData;
@@ -181,8 +212,6 @@ interface GeminiStoryResult {
   attempts: number;
   elapsedMs: number;
 }
-
-type StoryResult = GroqStoryResult | GeminiStoryResult;
 
 type CachedStory = {
   expiresAt: number;
@@ -207,19 +236,11 @@ Rules:
 - The lesson must come through the events of the story, not a lecture.
 - Do not include violence, death, weapons, frightening imagery, romance, or adult themes.
 
-Return ONLY valid JSON. The response MUST have:
-- Exactly 6 pages
-- Exactly 3 quiz questions
-- Each quiz question must have exactly 3 options
+Return ONLY valid JSON in exactly this shape (every text is an object with "en", "ur" and "ps"):
+{"title": {"en","ur","ps"}, "pages": [{"text": {"en","ur","ps"}, "illustration": one of ${illustrationValues.join('|')}, "choices": [{"text": {"en","ur","ps"}}]}], "quiz": [{"question": {"en","ur","ps"}, "options": [3 × {"en","ur","ps"}], "answer": 0-2}]}
+"choices" is an empty array on pages without choices. The request tells you the exact number of pages, the page layout (which pages have choices), and the number of quiz questions. Each quiz question has exactly 3 options.
 
-The 6 pages form a small branching story:
-- Page 0: introduce ${HERO} and the setting. No choices.
-- Page 1: a problem appears. Exactly 2 choices for what ${HERO} does next.
-- Page 2: what happens after choice 1. Exactly 1 choice to continue.
-- Page 3: what happens after choice 2. Exactly 1 choice to continue.
-- Page 4: ${HERO} solves the problem using the lesson. No choices.
-- Page 5: happy ending that shows the lesson. No choices.
-Both branches must make sense before page 4. Quiz questions must be answerable from the story whichever branch the child picks.`;
+Page 0 introduces ${HERO} and the setting. The story is a small branching adventure: at each decision point the child picks one of two paths, both paths make sense on their own, and they rejoin later. Quiz questions must be answerable whichever path the child picks.`;
 
 type StoryRequest = z.infer<typeof StoryRequestSchema>;
 
@@ -254,7 +275,7 @@ function buildUserPrompt(req: StoryRequest): string {
     `Preferred reading language: ${req.language}. ${languageGuidance}`,
     `The hero ${HERO} is a ${req.gender} (use the correct Urdu verb gender).`,
     purpose ? `A parent asked for this story to gently help their child with: "${purpose.label}". Weave this in naturally.` : '',
-    `Story structure: Your response MUST contain exactly ${lengthConfig.pages} pages. Each page should have meaningful content. Include branching choices (story split points that lead to different paths). Include exactly ${quizRequirement}.`,
+    `Story structure: Your response MUST contain exactly ${lengthConfig.pages} pages (numbered 0 to ${lengthConfig.pages - 1}) and exactly ${quizRequirement}. Page layout:\n${describeLayoutForPrompt(storyLength)}`,
     `For a ${lengthConfig.pages}-page story: expand the narrative with more chapters, deeper character development, and additional adventures. Do not pad with repetition.`,
     'Write a fresh, original story.',
   ].filter(Boolean).join('\n');
@@ -264,7 +285,10 @@ async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: numbe
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return await fetch(url, { ...init, signal: controller.signal });
+    // Read the whole body before clearing the timer: a slow body would otherwise wait forever.
+    const res = await fetch(url, { ...init, signal: controller.signal });
+    const body = await res.text();
+    return new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers });
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') {
       throw new ProviderFailure('provider', timeoutMessage, retryableOnTimeout);
@@ -304,7 +328,18 @@ function unwrapResponse(obj: unknown): unknown {
   return obj;
 }
 
-async function callGroqAttempt(prompt: string, model: string, deadlineAt: number, includeReasoningEffort: boolean, maxTokens: number): Promise<string> {
+/** Groq's own error text for a 400, trimmed for logs (never contains our key or the story). */
+function groqErrorMessage(responseText: string): string {
+  try {
+    const message = (JSON.parse(responseText) as { error?: { message?: string } }).error?.message;
+    if (message) return message.slice(0, 200);
+  } catch {
+    // not JSON
+  }
+  return responseText.slice(0, 200) || 'no details';
+}
+
+async function callGroqAttempt(prompt: string, model: string, deadlineAt: number, includeReasoningEffort: boolean, maxTokens: number, storyLength: StoryLength): Promise<string> {
   if (!GROQ_API_KEY) throw new ProviderFailure('config-error', 'GROQ_API_KEY not set');
   const remainingMs = deadlineAt - Date.now();
   if (remainingMs <= 0) throw new ProviderFailure('total-timeout', 'Groq generation total timeout exceeded');
@@ -321,10 +356,12 @@ async function callGroqAttempt(prompt: string, model: string, deadlineAt: number
 
   // Add reasoning_effort for gpt-oss models (reasoning tokens count toward limit)
   if (includeReasoningEffort && model.includes('gpt-oss')) {
-    body.reasoning_effort = 'low';
+    // Longer stories need more planning to keep page count and branching straight.
+    body.reasoning_effort = storyLength === 'short' ? 'low' : 'medium';
   }
 
-  // Use json_schema if available, otherwise json_object
+  // Plain JSON mode: Groq's strict json_schema rejects a whole story over one bad field, so the
+  // shape comes from the prompt and our own validation (with a corrective retry) checks it.
   body.response_format = { type: 'json_object' };
 
   const res = await fetchWithTimeout('https://api.groq.com/openai/v1/chat/completions', {
@@ -334,7 +371,7 @@ async function callGroqAttempt(prompt: string, model: string, deadlineAt: number
       Authorization: `Bearer ${GROQ_API_KEY}`,
     },
     body: JSON.stringify(body),
-  }, Math.min(GROQ_TIMEOUT_MS, remainingMs), 'Groq request timed out', true);
+  }, Math.min(attemptTimeoutMs(storyLength, GROQ_TIMEOUT_MS), remainingMs), 'Groq request timed out', true);
 
   if (!res.ok) {
     const responseText = res.status === 400 ? await res.text().catch(() => '') : '';
@@ -342,7 +379,7 @@ async function callGroqAttempt(prompt: string, model: string, deadlineAt: number
     const retryable = [429, 500, 502, 503, 504].includes(res.status);
     const skipModel = res.status === 404;
     const reason = res.status === 400
-      ? 'bad request'
+      ? `bad request (${groqErrorMessage(responseText)})`
       : res.status === 401 || res.status === 403
       ? 'invalid API key or permission'
       : res.status === 404
@@ -372,14 +409,15 @@ async function callGroqAttempt(prompt: string, model: string, deadlineAt: number
   return text;
 }
 
-async function callGroqWithRetries(prompt: string, model: string, deadlineAt: number): Promise<GroqRawResult> {
+async function callGroqWithRetries(prompt: string, model: string, deadlineAt: number, storyLength: StoryLength): Promise<GroqRawResult> {
   const startedAt = Date.now();
   let includeReasoningEffort = true;
-  let maxTokens = GROQ_MAX_COMPLETION_TOKENS;
+  // gpt-oss reasoning tokens count toward this limit too
+  let maxTokens = LENGTH_BUDGETS[storyLength].outputTokens;
 
   for (let attempt = 1; attempt <= GROQ_MAX_ATTEMPTS; attempt += 1) {
     try {
-      const text = await callGroqAttempt(prompt, model, deadlineAt, includeReasoningEffort, maxTokens);
+      const text = await callGroqAttempt(prompt, model, deadlineAt, includeReasoningEffort, maxTokens, storyLength);
       const elapsedMs = Date.now() - startedAt;
       console.info('[story] groq attempt', { model, attempt, elapsedMs, outcome: 'ok' });
       return { text, attempts: attempt, elapsedMs };
@@ -405,7 +443,7 @@ async function callGroqWithRetries(prompt: string, model: string, deadlineAt: nu
 
       // Retry once on length finish_reason with higher token limit
       if (failure.message.includes('finish_reason: length') && attempt === 1) {
-        maxTokens = Math.min(maxTokens * 1.5, 12_000);
+        maxTokens = Math.round(Math.min(maxTokens * 1.5, LENGTH_BUDGETS[storyLength].outputTokens * 1.5));
         console.warn('[story] Groq response truncated; retrying with higher token limit', { model, attempt, newMaxTokens: maxTokens });
         continue;
       }
@@ -427,7 +465,7 @@ async function callGroqWithRetries(prompt: string, model: string, deadlineAt: nu
 async function generateFromGroq(prompt: string, fallbackIllustration: StoryPage['illustration'], storyLength: StoryLength = 'short'): Promise<GroqStoryResult> {
   if (!GROQ_API_KEY) throw new ProviderFailure('config-error', 'GROQ_API_KEY not set');
   const startedAt = Date.now();
-  const deadlineAt = startedAt + GENERATION_TOTAL_TIMEOUT_MS;
+  const deadlineAt = startedAt + totalTimeoutMs(storyLength);
   const models = [...new Set([GROQ_MODEL, ...GROQ_FALLBACK_MODELS])];
   const errors: string[] = [];
   let attempts = 0;
@@ -439,7 +477,7 @@ async function generateFromGroq(prompt: string, fallbackIllustration: StoryPage[
     let modelPrompt = prompt;
     for (let validationAttempt = 0; validationAttempt < 2; validationAttempt += 1) {
       try {
-        const raw = await callGroqWithRetries(modelPrompt, model, deadlineAt);
+        const raw = await callGroqWithRetries(modelPrompt, model, deadlineAt, storyLength);
         attempts += raw.attempts;
 
         try {
@@ -496,11 +534,11 @@ interface GeminiRawResult {
   elapsedMs: number;
 }
 
-function geminiGenerationConfig(model: string, includeThinking: boolean) {
+function geminiGenerationConfig(model: string, includeThinking: boolean, storyLength: StoryLength) {
   const config: Record<string, unknown> = {
     responseMimeType: 'application/json',
-    responseSchema: GEMINI_RESPONSE_SCHEMA,
-    maxOutputTokens: GEMINI_MAX_OUTPUT_TOKENS,
+    responseSchema: toGeminiSchema(storyJsonSchema(storyLength)),
+    maxOutputTokens: LENGTH_BUDGETS[storyLength].outputTokens,
     temperature: 0.9,
   };
   if (includeThinking && model.startsWith('gemini-3')) {
@@ -520,9 +558,8 @@ function isGeminiCircuitBreakerOpen(model: string): boolean {
 }
 
 function recordGeminiFailure(model: string, failure: ProviderFailure) {
-  if (![429, 500, 502, 503, 504].includes(failure.retryable ? 200 : 400) && !failure.message.includes('timed out')) {
-    return; // Only track 429, 503, 500, 502, 504, timeouts
-  }
+  // Only overload-type failures count: retryable means HTTP 429/500/502/503/504 (see callGeminiAttempt), plus timeouts.
+  if (!failure.retryable && !failure.message.includes('timed out')) return;
 
   const currentState = geminiCircuitBreakers.get(model) || { consecutiveFailures: 0, bannedUntil: 0 };
   currentState.consecutiveFailures += 1;
@@ -539,7 +576,7 @@ function resetGeminiFailures(model: string) {
   geminiCircuitBreakers.set(model, { consecutiveFailures: 0, bannedUntil: 0 });
 }
 
-async function callGeminiAttempt(prompt: string, model: string, deadlineAt: number, includeThinking: boolean): Promise<string> {
+async function callGeminiAttempt(prompt: string, model: string, deadlineAt: number, includeThinking: boolean, storyLength: StoryLength): Promise<string> {
   if (!GEMINI_API_KEY) throw new ProviderFailure('config-error', 'GEMINI_API_KEY not set');
   const remainingMs = deadlineAt - Date.now();
   if (remainingMs <= 0) throw new ProviderFailure('total-timeout', 'Gemini generation total timeout exceeded');
@@ -550,11 +587,11 @@ async function callGeminiAttempt(prompt: string, model: string, deadlineAt: numb
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: geminiGenerationConfig(model, includeThinking),
+      generationConfig: geminiGenerationConfig(model, includeThinking, storyLength),
       safetySettings: ['HARM_CATEGORY_HARASSMENT', 'HARM_CATEGORY_HATE_SPEECH', 'HARM_CATEGORY_SEXUALLY_EXPLICIT', 'HARM_CATEGORY_DANGEROUS_CONTENT']
         .map((category) => ({ category, threshold: 'BLOCK_LOW_AND_ABOVE' })),
     }),
-  }, Math.min(GEMINI_TIMEOUT_MS, remainingMs), 'Gemini request timed out', true);
+  }, Math.min(attemptTimeoutMs(storyLength, GEMINI_TIMEOUT_MS), remainingMs), 'Gemini request timed out', true);
 
   if (!res.ok) {
     const retryable = [429, 500, 502, 503, 504].includes(res.status);
@@ -589,15 +626,16 @@ async function callGeminiAttempt(prompt: string, model: string, deadlineAt: numb
   return text;
 }
 
-async function callGeminiWithRetries(prompt: string, model: string, deadlineAt: number): Promise<GeminiRawResult> {
+async function callGeminiWithRetries(prompt: string, model: string, deadlineAt: number, storyLength: StoryLength): Promise<GeminiRawResult> {
   const startedAt = Date.now();
   let includeThinking = model.startsWith('gemini-3');
   let totalAttempts = 0;
 
-  // Retry loop: max 1 retry on 500/502/503/504/timeout, honor 429 retry-after, then move to next model
-  for (let retry = 0; retry <= 1; retry += 1) {
+  // Retry loop: up to GEMINI_MAX_ATTEMPTS on 429/500/502/503/504/timeout, then move to the next model.
+  // A 429 asking us to wait more than 5s moves on straight away.
+  for (let retry = 0; retry < GEMINI_MAX_ATTEMPTS; retry += 1) {
     try {
-      const text = await callGeminiAttempt(prompt, model, deadlineAt, includeThinking);
+      const text = await callGeminiAttempt(prompt, model, deadlineAt, includeThinking, storyLength);
       const elapsedMs = Date.now() - startedAt;
       totalAttempts += 1;
       console.info('[story] gemini attempt', { model, attempt: totalAttempts, elapsedMs, outcome: 'ok' });
@@ -630,27 +668,15 @@ async function callGeminiWithRetries(prompt: string, model: string, deadlineAt: 
         throw new ProviderFailure(failure.kind, failure.message, failure.retryable, failure.retryAfterMs, totalAttempts, failure.skipModel, failure.removeField);
       }
 
-      // 429: honor retry-after if under 5s, else move to next model
-      if (failure.message.includes('429')) {
-        if (failure.retryAfterMs && failure.retryAfterMs <= 5_000 && retry === 0) {
-          const remainingMs = deadlineAt - Date.now();
-          if (remainingMs > failure.retryAfterMs) {
-            await new Promise<void>((resolve) => setTimeout(resolve, failure.retryAfterMs));
-            continue;
-          }
-        }
-        // 429 without short retry-after: move to next model
+      const isLastAttempt = retry === GEMINI_MAX_ATTEMPTS - 1;
+      const longRetryAfter = failure.retryAfterMs !== undefined && failure.retryAfterMs > 5_000;
+      if (!failure.retryable || isLastAttempt || longRetryAfter) {
         throw new ProviderFailure(failure.kind, failure.message, false, failure.retryAfterMs, totalAttempts, failure.skipModel, failure.removeField);
       }
 
-      // 500/502/503/504/timeout: retry once, then move to next model
-      if (!failure.retryable || retry === 1) {
-        throw new ProviderFailure(failure.kind, failure.message, false, failure.retryAfterMs, totalAttempts, failure.skipModel, failure.removeField);
-      }
-
-      // Wait before retry
+      // Wait before retry (a short retry-after from a 429 wins over our own backoff)
       const remainingMs = deadlineAt - Date.now();
-      const delayMs = Math.min(retryDelay(retry + 1), 8_000);
+      const delayMs = failure.retryAfterMs ?? Math.min(retryDelay(retry + 1), 8_000);
       if (remainingMs <= delayMs) throw new ProviderFailure('total-timeout', 'Gemini generation total timeout exceeded');
       await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
     }
@@ -662,7 +688,7 @@ async function callGeminiWithRetries(prompt: string, model: string, deadlineAt: 
 async function generateFromGemini(prompt: string, fallbackIllustration: StoryPage['illustration'], storyLength: StoryLength = 'short'): Promise<GeminiStoryResult> {
   if (!GEMINI_API_KEY) throw new ProviderFailure('config-error', 'GEMINI_API_KEY not set');
   const startedAt = Date.now();
-  const deadlineAt = startedAt + GENERATION_TOTAL_TIMEOUT_MS;
+  const deadlineAt = startedAt + totalTimeoutMs(storyLength);
   const models = [...new Set([GEMINI_MODEL, ...GEMINI_FALLBACK_MODELS])];
   const errors: string[] = [];
   let attempts = 0;
@@ -675,7 +701,7 @@ async function generateFromGemini(prompt: string, fallbackIllustration: StoryPag
     let modelPrompt = prompt;
     for (let validationAttempt = 0; validationAttempt < 2; validationAttempt += 1) {
       try {
-        const raw = await callGeminiWithRetries(modelPrompt, model, deadlineAt);
+        const raw = await callGeminiWithRetries(modelPrompt, model, deadlineAt, storyLength);
         attempts += raw.attempts;
 
         try {
@@ -778,6 +804,25 @@ function countSoftTerms(text: string): BannedTermMatch[] {
   return enBloodCount > 2 || urBloodCount > 2 ? matches : [];
 }
 
+// Written out by hand because some type-checkers (including Vercel's) infer z.object fields as optional.
+interface ModelStory {
+  title: LocalizedText;
+  pages: { text: LocalizedText; illustration: StoryPage['illustration']; choices?: { text: LocalizedText }[] }[];
+  quiz: { question: LocalizedText; options: LocalizedText[]; answer: number }[];
+}
+
+const DEFAULT_CHOICES: Record<'branch' | 'continue', LocalizedText[]> = {
+  branch: [
+    { en: 'Try the first idea', ur: 'پہلا خیال آزماؤ', ps: 'لومړی فکر وآزمایه' },
+    { en: 'Try the second idea', ur: 'دوسرا خیال آزماؤ', ps: 'دویم فکر وآزمایه' },
+  ],
+  continue: [{ en: 'Continue the adventure', ur: 'مہم جاری رکھو', ps: 'سفر ته دوام ورکړه' }],
+};
+
+function defaultChoiceText(choiceCount: number, choiceIndex: number): LocalizedText {
+  return choiceCount === 2 ? DEFAULT_CHOICES.branch[choiceIndex] : DEFAULT_CHOICES.continue[0];
+}
+
 export function normalizeStory(raw: unknown, fallbackIllustration: StoryPage['illustration'], storyLength: StoryLength = 'short'): StoryData {
   const parsed = ModelStorySchema.safeParse(raw);
   if (!parsed.success) throw new Error(formatSchemaError(parsed.error));
@@ -794,56 +839,34 @@ export function normalizeStory(raw: unknown, fallbackIllustration: StoryPage['il
     );
   }
 
-  // Build branching structure based on storyLength
-  // Short (6 pages): pages 1,2,3 have choices -> converge at 4
-  // Medium (12 pages): pages 4,5,6,7,8 have choices -> converge at 9
-  // Long (20 pages): pages 6,7,8,9,10,11,12 and 17,18,19 have choices -> converge at 13 and 20
-  const branching: Record<number, number[]> = {};
-  
-  if (storyLength === 'short') {
-    branching[1] = [2, 3]; // page 1: choose between 2 and 3
-    branching[2] = [4];    // page 2: go to 4
-    branching[3] = [4];    // page 3: go to 4
-  } else if (storyLength === 'medium') {
-    // First branch around page 4
-    branching[4] = [5, 7]; // page 4: choose between 5 and 7
-    branching[5] = [8];    // page 5: go to 8
-    branching[6] = [8];    // page 6: go to 8 (alternative path)
-    branching[7] = [9];    // page 7: go to 9
-    branching[8] = [9];    // page 8: go to 9 (converge)
-  } else if (storyLength === 'long') {
-    // First branch around page 6
-    branching[6] = [7, 10];   // page 6: choose between 7-9 and 10-12
-    branching[7] = [13];      // page 7: go to 13
-    branching[8] = [13];      // page 8: go to 13
-    branching[9] = [13];      // page 9: go to 13
-    branching[10] = [13];     // page 10: go to 13
-    branching[11] = [13];     // page 11: go to 13
-    branching[12] = [13];     // page 12: go to 13 (converge)
-    
-    // Second branch around page 17
-    branching[17] = [18, 19]; // page 17: choose between 18 and 19
-    branching[18] = [20];     // page 18: go to 20
-    branching[19] = [20];     // page 19: go to 20 (converge)
-  }
+  // Choices come from the shared topology so the AI story, the template story and the reader agree.
+  // The model only supplies choice wording: missing wording gets a gentle default and stray choices
+  // on other pages are dropped, rather than throwing away an otherwise good story.
+  const branching = choiceTargets(storyLength);
+  const data = parsed.data as ModelStory;
 
-  const pages: StoryPage[] = parsed.data.pages.map((page, index) => {
+  const pages: StoryPage[] = data.pages.map((page, index) => {
     const targets = branching[index];
-    if (!targets && page.choices?.length) throw new Error(`pages[${index}] must not have choices`);
-    if (targets && page.choices?.length !== targets.length) throw new Error(`pages[${index}] needs exactly ${targets.length} choices`);
     return {
       text: page.text,
       sceneKey: `s${index}`,
       illustration: ILLUSTRATIONS.includes(page.illustration) ? page.illustration : fallbackIllustration,
-      ...(targets ? { choices: targets.map((nextPage, choiceIndex) => ({ ...page.choices![choiceIndex], nextPage })) } : {}),
+      ...(targets
+        ? {
+            choices: targets.map((nextPage, choiceIndex) => ({
+              text: page.choices?.[choiceIndex]?.text ?? defaultChoiceText(targets.length, choiceIndex),
+              nextPage,
+            })),
+          }
+        : {}),
     };
   });
 
   const expectedQuizCount = lengthConfig.quizQuestions;
   const story: StoryData = {
-    title: parsed.data.title,
+    title: data.title,
     pages,
-    quiz: parsed.data.quiz.slice(0, expectedQuizCount),
+    quiz: data.quiz.slice(0, expectedQuizCount),
     length: storyLength,
   };
   validateChildSafety(story);
@@ -851,6 +874,11 @@ export function normalizeStory(raw: unknown, fallbackIllustration: StoryPage['il
 }
 
 export function validateChildSafety(story: StoryData): void {
+  for (const [pageIndex, page] of story.pages.entries()) {
+    const theme = tokenizeWords(page.text.en).find((word) => FRIGHTENING_THEMES.includes(word.toLowerCase()));
+    if (theme) throw new ProviderFailure('child-safety', `banned child-safety theme on page ${pageIndex}: ${theme}`);
+  }
+
   // Check title
   for (const text of Object.values(story.title)) {
     const hardBan = findHardBanTerm(text);
@@ -913,13 +941,8 @@ function isRateLimited(ip: string, storyLength: StoryLength = 'short'): boolean 
   // Get recent requests within the window
   const recent = (rateLimits.get(ip) || []).filter((timestamp) => now - timestamp < RATE_LIMIT_WINDOW_MS);
   
-  // Calculate total weighted cost of recent requests
-  let totalWeightedCost = 0;
-  for (const timestamp of recent) {
-    // Estimate: requests within first 20s are likely short, 20-40s medium, 40-60s long
-    // For simplicity, assume all recent requests have average weight
-    totalWeightedCost += 1; // Base cost per request
-  }
+  // Each earlier request counts as 1 (their lengths aren't stored); this one counts by its own length.
+  const totalWeightedCost = recent.length;
   
   // Check if adding this request would exceed the limit
   if (totalWeightedCost + weightedCost > RATE_LIMIT_MAX_REQUESTS) {
@@ -966,105 +989,45 @@ export function resetApiStateForTests(): void {
   geminiCircuitBreakers.clear();
 }
 
-/**
- * Generate a story asynchronously using job-based polling.
- * For Medium/Long stories, calls outline → chapters pipeline.
- * For Short stories, falls back to synchronous generation.
- * 
- * Returns jobId for client to poll via GET /api/story-status/:jobId
- */
-async function generateStoryAsyncJob(req: StoryRequest, fallbackIllustration: StoryPage['illustration']): Promise<string> {
-  const storyLength = req.storyLength || 'short';
-  const lengthConfig = STORY_LENGTHS[storyLength];
-  const jobId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-  const job = createJob(jobId);
-
-  // Start background job without awaiting
-  (async () => {
-    try {
-      const prompt = buildUserPrompt(req);
-      const errors: string[] = [];
-      const providersToTry = AI_PROVIDER_ORDER.filter((p) => {
-        if (p === 'groq') return GROQ_API_KEY;
-        if (p === 'gemini') return GEMINI_API_KEY;
-        return false;
-      });
-
-      for (const provider of providersToTry) {
-        try {
-          let result: GroqStoryResult | GeminiStoryResult | null = null;
-
-          if (provider === 'groq') {
-            result = await generateFromGroq(prompt, fallbackIllustration, storyLength);
-          } else if (provider === 'gemini') {
-            result = await generateFromGemini(prompt, fallbackIllustration, storyLength);
-          }
-
-          if (result) {
-            // Mark job as complete
-            const story: StoryData = {
-              ...result.story,
-              length: storyLength,
-            };
-            completeJob(jobId, story);
-            // Also cache for synchronous requests
-            const key = cacheKey(req);
-            storyCache.set(key, { ...result, story, expiresAt: Date.now() + CACHE_TTL_MS });
-            return;
-          }
-        } catch (error) {
-          const failure = error instanceof ProviderFailure ? error : new ProviderFailure('provider', String(error));
-          errors.push(logFailure(provider, failure));
-          if (failure.kind === 'total-timeout') {
-            failJob(jobId, 'Story generation timed out');
-            return;
-          }
-        }
-      }
-
-      // All providers failed
-      failJob(jobId, errors.join('; '));
-    } catch (error) {
-      failJob(jobId, error instanceof Error ? error.message : 'Unknown error');
-    }
-  })().catch((err) => {
-    console.error('[story] async job error', err);
-    failJob(jobId, 'Internal server error');
-  });
-
-  return jobId;
-}
-
-export async function POSTAsync(request: Request): Promise<Response> {
-  const req = parseRequest(await request.json().catch(() => null));
-  if (!req) return Response.json({ error: 'Invalid request' }, { status: 400 });
-
-  const requestedLength = req.storyLength || 'short';
-  
-  console.info('[story] POSTAsync request', {
-    requestedLength,
-    settingId: req.settingId,
-    lessonId: req.lessonId,
-  });
-
-  if (isRateLimited(clientIp(request), requestedLength)) {
-    console.warn('[story] async rate limited', { requestedLength });
-    return Response.json({ error: 'You are creating stories too quickly. Please try again in a minute.' }, { status: 429 });
-  }
-
-  const fallbackIllustration = SETTINGS.find((setting) => setting.id === req.settingId)!.sceneKey as StoryPage['illustration'];
-
-  try {
-    const jobId = await generateStoryAsyncJob(req, fallbackIllustration);
-    console.info('[story] async job created', { jobId, requestedLength });
-    return Response.json({ jobId, statusUrl: `/api/story-status/${jobId}` }, { status: 202 });
-  } catch (error) {
-    console.error('[story] job creation error', { requestedLength, error: error instanceof Error ? error.message : String(error) });
-    return Response.json({ error: 'Failed to create generation job' }, { status: 500 });
-  }
-}
+// Safety net: however the providers behave, a child never waits past this; they get the template story instead.
+const HARD_DEADLINE_EXTRA_MS = 15_000;
 
 export async function POST(request: Request): Promise<Response> {
+  const bodyText = await request.text().catch(() => '');
+  const req = parseRequest((() => { try { return JSON.parse(bodyText); } catch { return null; } })());
+  if (!req) return Response.json({ error: 'Invalid request' }, { status: 400 });
+
+  const storyLength = req.storyLength || 'short';
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<Response>((resolve) => {
+    timer = setTimeout(() => {
+      console.error('[story] hard deadline reached; serving template', { storyLength });
+      resolve(Response.json({ story: templateStory(req), provider: 'template', fallbackReason: 'Story generation took too long' }));
+    }, totalTimeoutMs(storyLength) + HARD_DEADLINE_EXTRA_MS);
+  });
+  const work = handleStory(new Request(request.url, { method: 'POST', headers: request.headers, body: bodyText }));
+  try {
+    return await Promise.race([work, deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function templateStory(req: StoryRequest): StoryData {
+  // HERO token, not a name: the browser swaps in the child's name, as with AI stories.
+  return buildStory({
+    childName: HERO,
+    hero: HERO,
+    setting: SETTINGS.find((s) => s.id === req.settingId)!,
+    lesson: LESSONS.find((l) => l.id === req.lessonId)!,
+    avatar: AVATARS[0],
+    heroGender: req.gender,
+    language: req.language,
+    storyLength: req.storyLength || 'short',
+  });
+}
+
+async function handleStory(request: Request): Promise<Response> {
   const req = parseRequest(await request.json().catch(() => null));
   if (!req) return Response.json({ error: 'Invalid request' }, { status: 400 });
 
@@ -1148,15 +1111,7 @@ export async function POST(request: Request): Promise<Response> {
   // If Medium or Long story generation failed, use template fallback instead of error
   if (requestedLength !== 'short') {
     console.warn('[story] falling back to template for', { requestedLength });
-    const fallbackStory = buildStory({ 
-      childName: 'our hero',
-      hero: 'our hero',
-      setting: SETTINGS.find((s) => s.id === req.settingId)!,
-      lesson: LESSONS.find((l) => l.id === req.lessonId)!,
-      avatar: { id: 'temp', name: 'Hero', color: '#000', skin: 'light', hair: 'black', gender: req.gender },
-      language: req.language,
-      storyLength: requestedLength as StoryLength,
-    });
+    const fallbackStory = templateStory(req);
     return Response.json({ 
       story: fallbackStory, 
       provider: 'template', 

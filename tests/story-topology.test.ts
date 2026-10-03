@@ -172,9 +172,9 @@ describe('story-topology', () => {
       const nextPagesPage6 = getNextPages(topology, 6);
       expect(nextPagesPage6).toHaveLength(2);
       
-      // Second branch at page 17
-      const nextPagesPage17 = getNextPages(topology, 17);
-      expect(nextPagesPage17).toHaveLength(2);
+      // Second branch at page 16 (rejoins at the final page 19)
+      const nextPagesPage16 = getNextPages(topology, 16);
+      expect(nextPagesPage16).toHaveLength(2);
     });
   });
 

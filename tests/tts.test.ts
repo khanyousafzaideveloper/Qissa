@@ -1,22 +1,6 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { chunkText, splitIntoSentences } from '../src/lib/tts/chunk';
 import { scoreVoice, LANGUAGE_LOCALE_MAP } from '../src/lib/tts/voices';
-
-// Mock Web Speech API
-interface MockVoice {
-  name: string;
-  lang: string;
-}
-
-// Mock voice data for testing
-const mockVoices: MockVoice[] = [
-  { name: 'Google UK English Female', lang: 'en-GB' },
-  { name: 'Microsoft David', lang: 'en-US' },
-  { name: 'Natural English', lang: 'en-PK' },
-  { name: 'Urdu Female', lang: 'ur-PK' },
-  { name: 'Google Urdu', lang: 'ur' },
-  { name: 'Pashto Male', lang: 'ps-AF' },
-];
 
 describe('Text Chunking (chunk.ts)', () => {
   describe('splitIntoSentences', () => {
@@ -106,7 +90,6 @@ describe('Text Chunking (chunk.ts)', () => {
         'This is a test sentence. It has multiple parts. Each part should be preserved correctly.';
       const result = chunkText(originalText, 180);
       const combined = result.join(' ').replace(/\s+/g, ' ');
-      const original = originalText.replace(/\s+/g, ' ');
       expect(combined).toContain('test');
       expect(combined).toContain('sentence');
       expect(combined).toContain('parts');
@@ -388,11 +371,10 @@ describe('TTS API Validation (api/tts.ts)', () => {
 describe('Integration: TTS Feature End-to-End', () => {
   it('chunks text, selects voice, and prepares for playback', () => {
     const text = 'First sentence. Second sentence. Third sentence.';
-    const language = 'english';
     const chunks = chunkText(text, 180);
 
     expect(chunks.length).toBeGreaterThan(0);
-    expect(chunks[0]).toContain('First') || chunks[0].includes('sentence');
+    expect(chunks[0]).toContain('First');
   });
 
   it('handles bilingual text (English + Urdu)', () => {
@@ -408,7 +390,6 @@ describe('Integration: TTS Feature End-to-End', () => {
 
   it('respects privacy: child name not sent by default', () => {
     // Browser TTS uses local playback, no server call
-    const text = 'Hello, Ali.';
     const useServerVoice = false; // Default is false
 
     expect(useServerVoice).toBe(false);

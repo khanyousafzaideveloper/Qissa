@@ -45,7 +45,7 @@ const rateLimitMap = new Map<string, RateLimitEntry>();
 function logTTS(
   level: 'info' | 'warn' | 'error',
   message: string,
-  meta?: Record<string, any>,
+  meta?: Record<string, unknown>,
 ) {
   const sanitized = meta
     ? {
@@ -176,12 +176,15 @@ async function callGeminiTTS(text: string, language: string, voice?: string): Pr
       throw new Error(`Gemini TTS HTTP ${response.status}`);
     }
 
-    const data = await response.json() as any;
+    type InlineAudio = { data?: string };
+    const data = await response.json() as {
+      candidates?: { content?: { parts?: { inlineData?: InlineAudio; inline_data?: InlineAudio }[] } }[];
+    };
 
-    // Extract audio from Gemini response
-    // The response format depends on Gemini API version; adjust as needed
-    if (data?.candidates?.[0]?.content?.parts?.[0]?.inline_data?.data) {
-      const base64Data = data.candidates[0].content.parts[0].inline_data.data as string;
+    // Gemini's REST API returns camelCase `inlineData`; accept snake_case too.
+    const audioPart = data?.candidates?.[0]?.content?.parts?.[0];
+    const base64Data = audioPart?.inlineData?.data ?? audioPart?.inline_data?.data;
+    if (base64Data) {
       const audioBuffer = Buffer.from(base64Data, 'base64');
 
       // Check if it's raw PCM; wrap it if needed

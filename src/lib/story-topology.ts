@@ -1,4 +1,5 @@
-import { StoryLength, STORY_LENGTHS } from '../data/storyData';
+// .js extension so the Vercel Functions in api/ can import this under Node ESM.
+import { type StoryLength, STORY_LENGTHS } from '../data/storyData.js';
 
 /**
  * Represents a branching point in the story where the reader makes a choice.
@@ -33,7 +34,6 @@ export interface StoryTopology {
 export function generateTopology(length: StoryLength): StoryTopology {
   const config = STORY_LENGTHS[length];
   const totalPages = config.pages;
-  const errors: string[] = [];
 
   let branchPoints: BranchPoint[] = [];
 
@@ -69,8 +69,8 @@ export function generateTopology(length: StoryLength): StoryTopology {
     // Long (20 pages):
     // - Pages 0-5: intro (linear)
     // - Page 6: branch point 1 → paths A (pages 7-9) and B (pages 10-12) → converge at page 13
-    // - Pages 13-16: converged (linear)
-    // - Page 17: branch point 2 → paths A (page 18) and B (page 19) → converge at page 20 (end)
+    // - Pages 13-15: converged (linear)
+    // - Page 16: branch point 2 → paths A (page 17) and B (page 18) → converge at page 19 (ending)
     branchPoints = [
       {
         pageIndex: 6,
@@ -81,12 +81,12 @@ export function generateTopology(length: StoryLength): StoryTopology {
         convergePage: 13,
       },
       {
-        pageIndex: 17,
-        choiceAStart: 18,
-        choiceAEnd: 18,
-        choiceBStart: 19,
-        choiceBEnd: 19,
-        convergePage: 20,
+        pageIndex: 16,
+        choiceAStart: 17,
+        choiceAEnd: 17,
+        choiceBStart: 18,
+        choiceBEnd: 18,
+        convergePage: 19,
       },
     ];
   }
@@ -288,4 +288,45 @@ export function getNextPages(topology: StoryTopology, currentPage: number): numb
   }
 
   return []; // Last page has no next page
+}
+
+/**
+ * Where each page's choices lead, derived from the topology:
+ * the branch page offers both paths, and the last page of each path offers one
+ * "continue" choice that jumps to the convergence page (so path A skips path B).
+ */
+export function choiceTargets(length: StoryLength): Record<number, number[]> {
+  const targets: Record<number, number[]> = {};
+  for (const bp of generateTopology(length).branchPoints) {
+    targets[bp.pageIndex] = [bp.choiceAStart, bp.choiceBStart];
+    targets[bp.choiceAEnd] = [bp.convergePage];
+    targets[bp.choiceBEnd] = [bp.convergePage];
+  }
+  return targets;
+}
+
+/** Page-by-page outline for the AI prompt, one line per page so the model can't lose count. */
+export function describeLayoutForPrompt(length: StoryLength): string {
+  const topology = generateTopology(length);
+  const targets = choiceTargets(length);
+  const total = STORY_LENGTHS[length].pages;
+  const lines: string[] = [];
+  for (let page = 0; page < total; page++) {
+    const bp = topology.branchPoints.find((b) => b.pageIndex === page);
+    const inA = topology.branchPoints.find((b) => page >= b.choiceAStart && page <= b.choiceAEnd);
+    const inB = topology.branchPoints.find((b) => page >= b.choiceBStart && page <= b.choiceBEnd);
+    let role: string;
+    if (page === 0) role = 'introduce the hero and the setting';
+    else if (page === total - 1) role = 'happy ending that shows the lesson';
+    else if (bp) role = `decision point: exactly 2 choices (choice 1 → page ${bp.choiceAStart}, choice 2 → page ${bp.choiceBStart})`;
+    else if (inA) role = `path A (after choice 1 on page ${inA.pageIndex})`;
+    else if (inB) role = `path B (after choice 2 on page ${inB.pageIndex}); must not depend on path A`;
+    else role = 'story continues';
+    const t = targets[page];
+    if (t && t.length === 1) role += `; exactly 1 choice to continue → page ${t[0]}`;
+    else if (!t) role += '; no choices';
+    lines.push(`- Page ${page}: ${role}`);
+  }
+  lines.push(`That is exactly ${total} pages (0 to ${total - 1}). A child reads only one path at each decision point.`);
+  return lines.join('\n');
 }

@@ -1,4 +1,6 @@
 import React from 'react';
+import { ANIMAL_DRAWINGS } from './AnimalAvatars';
+import { AVATARS, LEGACY_AVATAR_ANIMALS, type AnimalKind } from '../data/storyData';
 
 interface IllustrationProps {
   className?: string;
@@ -361,29 +363,19 @@ export const ILLUSTRATION_MAP: Record<string, React.FC<IllustrationProps>> = {
   journey: JourneyScene,
 };
 
-/** Avatar SVG — a cute child character */
-export const AvatarSvg: React.FC<{ avatar: { color: string; skin: string; hair: string }; size?: number; className?: string }> = ({ avatar, size = 80, className = '' }) => (
-  <svg viewBox="0 0 100 100" width={size} height={size} className={className}>
-    {/* body */}
-    <path d="M25 100 Q25 65 50 65 Q75 65 75 100 Z" fill={avatar.color} />
-    {/* head */}
-    <circle cx="50" cy="45" r="22" fill={avatar.skin} />
-    {/* hair */}
-    <path d="M28 40 Q28 22 50 22 Q72 22 72 40 Q72 32 50 28 Q28 32 28 40 Z" fill={avatar.hair} />
-    {/* eyes */}
-    <circle cx="42" cy="44" r="3" fill="#1a1a1a" />
-    <circle cx="58" cy="44" r="3" fill="#1a1a1a" />
-    <circle cx="43" cy="43" r="1" fill="#fff" />
-    <circle cx="59" cy="43" r="1" fill="#fff" />
-    {/* smile */}
-    <path d="M44 52 Q50 57 56 52" stroke="#1a1a1a" strokeWidth="2" fill="none" strokeLinecap="round" />
-    {/* cheeks */}
-    <circle cx="36" cy="50" r="3" fill="#f93c6a" opacity="0.4" />
-    <circle cx="64" cy="50" r="3" fill="#f93c6a" opacity="0.4" />
-    {/* collar */}
-    <path d="M40 68 L50 75 L60 68" stroke="#fff" strokeWidth="3" fill="none" />
-  </svg>
-);
+/** Avatar SVG — a cute animal in a soft round badge */
+export const AvatarSvg: React.FC<{ avatar: { id: string; color?: string }; size?: number; className?: string }> = ({ avatar, size = 80, className = '' }) => {
+  const known = AVATARS.find((a) => a.id === avatar.id);
+  const animal: AnimalKind = known?.id ?? LEGACY_AVATAR_ANIMALS[avatar.id] ?? 'lion';
+  const Drawing = ANIMAL_DRAWINGS[animal];
+  const tint = known?.color ?? AVATARS.find((a) => a.id === animal)?.color ?? '#e0f2fe';
+  return (
+    <svg viewBox="0 0 100 100" width={size} height={size} className={className} role="img" aria-label={animal}>
+      <circle cx="50" cy="50" r="48" fill={tint} />
+      <Drawing />
+    </svg>
+  );
+};
 
 /** Decorative floating book logo */
 export const BookLogo: React.FC<{ className?: string; size?: number }> = ({ className = '', size = 40 }) => (

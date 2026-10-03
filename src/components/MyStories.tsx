@@ -14,12 +14,12 @@ interface MyStoriesProps {
 }
 
 export const MyStories: React.FC<MyStoriesProps> = ({ stories, onCreate, onOpen, onToggleFavorite, onDelete, onHome }) => (
-  <div className="min-h-screen bg-gradient-to-b from-saffron-50 via-rose2-50 to-emerald2-50">
+  <div className="relative min-h-screen overflow-x-hidden bg-gradient-to-b from-sky2-200 via-sky2-100 to-sky2-50">
     <FloatingDecor />
-    <nav className="sticky top-0 z-50 border-b border-saffron-100 bg-white/80 backdrop-blur-md">
+    <nav className="sticky top-0 z-50 border-b border-sky2-100 bg-white/80 backdrop-blur-md">
       <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
         <Logo size={32} />
-        <button onClick={onHome} className="flex items-center gap-1.5 text-sm font-bold text-gray-500 transition-colors hover:text-saffron-600">
+        <button onClick={onHome} className="flex items-center gap-1.5 text-sm font-bold text-gray-500 transition-colors hover:text-sky2-600">
           <Home className="h-4 w-4" /> Home
         </button>
       </div>
@@ -28,7 +28,7 @@ export const MyStories: React.FC<MyStoriesProps> = ({ stories, onCreate, onOpen,
     <main className="relative mx-auto max-w-5xl px-4 py-10">
       <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-end">
         <div>
-          <span className="inline-flex items-center gap-2 rounded-full bg-saffron-100 px-4 py-1.5 text-sm font-bold text-saffron-700">
+          <span className="inline-flex items-center gap-2 rounded-full bg-sky2-100 px-4 py-1.5 text-sm font-bold text-sky2-700">
             <BookOpen className="h-4 w-4" /> Saved on this device
           </span>
           <h1 className="mt-4 text-4xl font-extrabold text-gray-800">My Stories</h1>
@@ -39,7 +39,7 @@ export const MyStories: React.FC<MyStoriesProps> = ({ stories, onCreate, onOpen,
 
       {stories.length === 0 ? (
         <Card className="mt-10 p-10 text-center">
-          <BookOpen className="mx-auto h-12 w-12 text-saffron-400" />
+          <BookOpen className="mx-auto h-12 w-12 text-sky2-400" />
           <h2 className="mt-4 text-2xl font-bold text-gray-800">Your story shelf is waiting</h2>
           <p className="mt-2 text-gray-600">Stories you create will stay privately on this device.</p>
           <Button className="mt-6" onClick={onCreate}>Create Your First Story</Button>
@@ -50,9 +50,9 @@ export const MyStories: React.FC<MyStoriesProps> = ({ stories, onCreate, onOpen,
             const language = languageKey(entry.config.language);
             return (
               <Card key={entry.id} className="flex h-full flex-col overflow-hidden">
-                <button onClick={() => onOpen(entry)} className="flex-1 p-5 text-left transition-colors hover:bg-saffron-50">
+                <button onClick={() => onOpen(entry)} className="flex-1 p-5 text-left transition-colors hover:bg-sky2-50">
                   <div className="flex items-start justify-between gap-3">
-                    <div className="flex min-h-12 w-12 items-center justify-center rounded-2xl bg-saffron-100 text-2xl">
+                    <div className="flex min-h-12 w-12 items-center justify-center rounded-2xl bg-sky2-100 text-2xl">
                       {entry.config.setting.emoji}
                     </div>
                     <span className="rounded-full bg-emerald2-50 px-2.5 py-1 text-xs font-bold text-emerald2-700">Saved locally</span>
@@ -63,7 +63,7 @@ export const MyStories: React.FC<MyStoriesProps> = ({ stories, onCreate, onOpen,
                   <p className="mt-2 text-sm font-bold text-gray-500">{entry.config.childName} · {entry.config.setting.label}</p>
                   <p className="mt-1 text-xs text-gray-400">{new Date(entry.createdAt).toLocaleDateString()}</p>
                 </button>
-                <div className="flex items-center justify-between border-t border-saffron-100 px-4 py-3">
+                <div className="flex items-center justify-between border-t border-sky2-100 px-4 py-3">
                   <button
                     onClick={() => onToggleFavorite(entry)}
                     aria-label={entry.favorite ? 'Remove from favorites' : 'Add to favorites'}
@@ -78,7 +78,7 @@ export const MyStories: React.FC<MyStoriesProps> = ({ stories, onCreate, onOpen,
                   >
                     <Trash2 className="h-5 w-5" />
                   </button>
-                  <button onClick={() => onOpen(entry)} className="inline-flex items-center gap-1 text-sm font-bold text-saffron-700 hover:text-saffron-800">
+                  <button onClick={() => onOpen(entry)} className="inline-flex items-center gap-1 text-sm font-bold text-sky2-700 hover:text-sky2-800">
                     Read <ArrowLeft className="h-4 w-4 rotate-180" />
                   </button>
                 </div>

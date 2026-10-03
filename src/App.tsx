@@ -1,19 +1,24 @@
 import React, { useEffect, useState } from 'react';
 import { Landing } from './components/Landing';
+import { AvatarSvg } from './components/Illustrations';
 import { MyStories } from './components/MyStories';
 import { StoryCreator } from './components/StoryCreator';
 import { StoryReader } from './components/StoryReader';
 import { StoryQuiz } from './components/StoryQuiz';
 import { StoryGenerationError } from './components/StoryGenerationError';
 import { IllustrationChoice } from './components/IllustrationChoice';
-import { Logo, Button, Card, FloatingDecor } from './components/ui';
+import { SettingsScreen } from './components/SettingsScreen';
+import { Logo, Button, Card, SkyPage, FloatingDecor } from './components/ui';
 import { PARENT_PURPOSES, StoryConfig, StoryData } from './data/storyData';
 import { generateStory } from './data/generateStory';
 import { generateIllustrations } from './data/illustrations';
+import { loadPreferences, savePreferences, type Preferences } from './data/preferences';
 import { deleteStory, loadStories, saveStory, setStoryFavorite, SavedStory } from './data/storyHistory';
 import { Heart, ArrowLeft, Moon, School, Share2, ShieldCheck, Sparkles } from 'lucide-react';
 
-type View = 'landing' | 'creator' | 'loading' | 'generation-error' | 'illustrations' | 'reader' | 'quiz' | 'parent' | 'stories';
+const ILLUSTRATIONS_ENABLED = import.meta.env.VITE_ENABLE_AI_ILLUSTRATIONS === 'true';
+
+type View = 'landing' | 'settings' | 'creator' | 'loading' | 'generation-error' | 'illustrations' | 'reader' | 'quiz' | 'parent' | 'stories';
 type GenerationResult = Awaited<ReturnType<typeof generateStory>>;
 
 const PARENT_ICONS: Record<string, React.ElementType> = {
@@ -32,7 +37,8 @@ function App() {
   const [loadingStep, setLoadingStep] = useState(0);
   const [savedStories, setSavedStories] = useState<SavedStory[]>([]);
   const [parentPurpose, setParentPurpose] = useState<string | undefined>(undefined);
-  const [chapterProgress, setChapterProgress] = useState<{ status: 'generating' | 'complete' | 'failed'; count: number }>({ status: 'generating', count: 0 });
+  const [preferences, setPreferences] = useState<Preferences>(loadPreferences);
+  const [settingsReturnView, setSettingsReturnView] = useState<View>('landing');
 
   useEffect(() => {
     setSavedStories(loadStories());
@@ -53,7 +59,8 @@ function App() {
   };
 
   const openGeneratedStory = (result: GenerationResult, cfg: StoryConfig) => {
-    if (result.provider === 'template') {
+    // The "add scene images?" step only makes sense once an image model is configured.
+    if (result.provider === 'template' || !ILLUSTRATIONS_ENABLED) {
       finishStory(result, cfg);
       return;
     }
@@ -61,15 +68,33 @@ function App() {
     setView('illustrations');
   };
 
+  const openSettings = (returnTo: View) => {
+    setSettingsReturnView(returnTo);
+    setView('settings');
+  };
+
+  // First-time families set up the hero before the creator; afterwards it opens straight away.
+  const openCreator = (purpose?: string) => {
+    setParentPurpose(purpose);
+    if (preferences.childName) setView('creator');
+    else openSettings('creator');
+  };
+
+  const handleSaveSettings = (prefs: Preferences) => {
+    setPreferences(prefs);
+    savePreferences(prefs);
+    setView(settingsReturnView);
+  };
+
   const handleCreate = async (cfg: StoryConfig) => {
+    const nextPrefs = { ...preferences, lastSettingId: cfg.setting.id };
+    setPreferences(nextPrefs);
+    savePreferences(nextPrefs);
     setConfig(cfg);
     setPendingResult(null);
     setLoadingStep(0);
-    setChapterProgress({ status: 'generating', count: 0 });
     setView('loading');
-    const result = await generateStory(cfg, (status, count) => {
-      setChapterProgress({ status, count });
-    });
+    const result = await generateStory(cfg);
     openGeneratedStory(result, cfg);
   };
 
@@ -105,8 +130,7 @@ function App() {
   };
 
   const handleParentSelect = (purposeId: string) => {
-    setParentPurpose(purposeId);
-    setView('creator');
+    openCreator(purposeId);
   };
 
   const handleQuizComplete = () => {
@@ -120,9 +144,21 @@ function App() {
   if (view === 'landing') {
     return (
       <Landing
-        onCreate={() => { setParentPurpose(undefined); setView('creator'); }}
+        onCreate={() => openCreator()}
         onParentMode={() => setView('parent')}
         onMyStories={() => setView('stories')}
+        onSettings={() => openSettings('landing')}
+      />
+    );
+  }
+
+  if (view === 'settings') {
+    return (
+      <SettingsScreen
+        preferences={preferences}
+        isOnboarding={!preferences.childName}
+        onSave={handleSaveSettings}
+        onBack={() => setView(settingsReturnView === 'creator' && !preferences.childName ? 'landing' : settingsReturnView)}
       />
     );
   }
@@ -131,7 +167,7 @@ function App() {
     return (
       <MyStories
         stories={savedStories}
-        onCreate={() => { setParentPurpose(undefined); setView('creator'); }}
+        onCreate={() => openCreator()}
         onOpen={handleOpenStory}
         onToggleFavorite={handleToggleFavorite}
         onDelete={handleDeleteStory}
@@ -142,8 +178,7 @@ function App() {
 
   if (view === 'parent') {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-sky2-50 via-sky2-100 to-emerald2-50">
-        <FloatingDecor />
+      <SkyPage>
         <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-sky2-100">
           <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-3">
             <Logo size={32} />
@@ -154,10 +189,10 @@ function App() {
         </nav>
         <div className="mx-auto max-w-3xl px-4 py-12">
           <div className="text-center">
-            <span className="inline-flex items-center gap-2 rounded-full bg-sky2-100 px-4 py-1.5 text-sm font-bold text-sky2-700">
+            <span className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-1.5 text-sm font-bold text-sky2-700 shadow-sm">
               <Heart className="w-4 h-4" /> For Parents
             </span>
-            <h1 className="mt-4 text-4xl font-extrabold text-gray-800">Parent Purpose Mode</h1>
+            <h1 className="mt-4 text-4xl font-extrabold text-sky2-900">Parent Purpose Mode</h1>
             <p className="mt-3 text-lg text-gray-600">
               Choose a topic and Qissa will create a gentle story to help your child with a big feeling. The story weaves the lesson naturally into a fun adventure.
             </p>
@@ -188,15 +223,17 @@ function App() {
             All stories are safe, positive, and age-appropriate. We never collect children's photos.
           </div>
         </div>
-      </div>
+      </SkyPage>
     );
   }
 
   if (view === 'creator') {
     return (
       <StoryCreator
+        preferences={preferences}
         onComplete={handleCreate}
         onBack={() => setView('landing')}
+        onOpenSettings={() => openSettings('creator')}
         initialParentPurpose={parentPurpose}
       />
     );
@@ -208,31 +245,17 @@ function App() {
       ['Adding a little wonder', 'کہانی میں جادو شامل ہو رہا ہے'],
       ['Polishing the pages', 'صفحات تیار ہو رہے ہیں'],
     ];
-    const expectedChapters = config?.storyLength === 'short' ? 6 : config?.storyLength === 'medium' ? 12 : 20;
-    const progressPercent = expectedChapters > 0 ? Math.min(100, (chapterProgress.count / expectedChapters) * 100) : 0;
-    
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-6 bg-gradient-to-b from-sky2-900 via-sky2-800 to-indigo-900 px-4 text-center">
-        <Sparkles className="w-12 h-12 text-saffron-300 animate-bounce-soft" />
-        <h1 className="text-2xl font-extrabold text-white">{loadingMessages[loadingStep][0]}</h1>
-        <p className="font-urdu text-xl text-white/80" dir="rtl">{loadingMessages[loadingStep][1]}</p>
-        <p className="text-sm text-white/60">Writing {config?.childName}&apos;s story…</p>
+      <div className="relative min-h-screen overflow-hidden flex flex-col items-center justify-center gap-5 bg-gradient-to-b from-sky2-500 via-sky2-400 to-sky2-200 px-4 text-center">
+        <FloatingDecor />
+        <div className="relative rounded-full bg-white/90 p-3 shadow-xl animate-bounce-soft">
+          {config && <AvatarSvg avatar={config.avatar} size={88} />}
+        </div>
+        <Sparkles className="relative w-10 h-10 text-amber2-300 animate-twinkle" />
+        <h1 className="relative text-3xl font-extrabold text-white text-shadow-soft">{loadingMessages[loadingStep][0]}</h1>
+        <p className="relative font-urdu text-xl text-white" dir="rtl">{loadingMessages[loadingStep][1]}</p>
+        <p className="relative font-bold text-sky2-900/70">Writing {config?.childName}&apos;s story…</p>
         
-        {/* Chapter progress bar */}
-        {chapterProgress.count > 0 && (
-          <div className="w-full max-w-xs">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-semibold text-white/70">Progress</span>
-              <span className="text-xs font-semibold text-saffron-300">{chapterProgress.count}/{expectedChapters}</span>
-            </div>
-            <div className="h-2 w-full rounded-full bg-white/20 overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-saffron-400 to-saffron-300 transition-all duration-300"
-                style={{ width: `${progressPercent}%` }}
-              />
-            </div>
-          </div>
-        )}
       </div>
     );
   }
@@ -266,6 +289,7 @@ function App() {
         story={story}
         config={config}
         isOffline={storyProvider === 'template'}
+        preferences={preferences}
         onComplete={handleQuizComplete}
         onHome={() => setView('landing')}
       />
@@ -285,7 +309,7 @@ function App() {
 
   // Fallback
   return (
-    <div className="min-h-screen flex items-center justify-center bg-saffron-50">
+    <div className="min-h-screen flex items-center justify-center bg-sky2-50">
       <Button onClick={() => setView('landing')}>Go Home</Button>
     </div>
   );

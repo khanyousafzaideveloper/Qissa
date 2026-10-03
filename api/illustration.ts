@@ -30,7 +30,10 @@ async function fetchWithTimeout(url: string, init: RequestInit): Promise<Respons
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), IMAGE_TIMEOUT_MS);
   try {
-    return await fetch(url, { ...init, signal: controller.signal });
+    // Read the whole body before clearing the timer: a slow body would otherwise wait forever.
+    const res = await fetch(url, { ...init, signal: controller.signal });
+    const body = await res.arrayBuffer();
+    return new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers });
   } finally {
     clearTimeout(timeout);
   }

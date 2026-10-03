@@ -18,7 +18,7 @@ describe('story length validation', () => {
   describe('request schema validation', () => {
     it('accepts valid storyLength values (short, medium, long)', () => {
       const request = {
-        settingId: 'home',
+        settingId: 'swat',
         lessonId: 'kindness',
         language: 'english',
         gender: 'girl',
@@ -30,7 +30,7 @@ describe('story length validation', () => {
 
     it('rejects invalid storyLength values', () => {
       const request = {
-        settingId: 'home',
+        settingId: 'swat',
         lessonId: 'kindness',
         language: 'english',
         gender: 'girl',
@@ -42,7 +42,7 @@ describe('story length validation', () => {
 
     it('accepts requests without storyLength', () => {
       const request = {
-        settingId: 'home',
+        settingId: 'swat',
         lessonId: 'kindness',
         language: 'english',
         gender: 'girl',
@@ -56,7 +56,7 @@ describe('story length validation', () => {
 
     it('rejects unknown fields', () => {
       const request = {
-        settingId: 'home',
+        settingId: 'swat',
         lessonId: 'kindness',
         language: 'english',
         gender: 'girl',

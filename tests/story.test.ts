@@ -127,3 +127,4 @@ describe('story API contracts', () => {
     expect(story.pages).toHaveLength(6);
     expect(story.length).toBe('short');
   });
+});

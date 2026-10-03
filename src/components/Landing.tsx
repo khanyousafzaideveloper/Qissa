@@ -1,17 +1,18 @@
 import React from 'react';
 import { Logo, Button, Card, SectionBadge, FloatingDecor } from './ui';
 import { MountainScene, VillageScene, BazaarScene, EidScene, StarTwinkle } from './Illustrations';
-import { Sparkles, BookOpen, Globe, Mic, ShieldCheck, MapPin, Heart, Star, Download, Moon, School } from 'lucide-react';
+import { Sparkles, BookOpen, Globe, Mic, ShieldCheck, MapPin, Heart, Star, Download, Moon, School, Settings as SettingsIcon } from 'lucide-react';
 
 interface LandingProps {
   onCreate: () => void;
   onParentMode: () => void;
   onMyStories: () => void;
+  onSettings: () => void;
 }
 
 const FEATURES = [
   { icon: Globe, title: 'Urdu, Pashto & English', desc: 'Every story comes alive in three languages with beautiful bilingual reading mode.', color: 'sky2' },
-  { icon: Mic, title: 'Read-Along Narration', desc: 'Words light up as the story is read aloud, helping your child read with confidence.', color: 'saffron' },
+  { icon: Mic, title: 'Read-Along Narration', desc: 'Words light up as the story is read aloud, helping your child read with confidence.', color: 'sky2' },
   { icon: Sparkles, title: 'What Happens Next?', desc: 'Your child chooses the path — every story becomes their own unique adventure.', color: 'rose2' },
   { icon: Star, title: 'Mini Quiz & Star Rewards', desc: 'A gentle 2-3 question quiz at the end celebrates learning with shining stars.', color: 'amber2' },
   { icon: Download, title: 'Download as PDF', desc: 'Keep forever! Save your child\'s story as a beautiful PDF picture book.', color: 'emerald2' },
@@ -32,28 +33,31 @@ const PARENT_TOPICS = [
   { icon: ShieldCheck, title: 'Dealing with Unkindness', desc: 'Stories that build resilience and teach kind, strong responses.' },
 ];
 
-export const Landing: React.FC<LandingProps> = ({ onCreate, onParentMode, onMyStories }) => {
+export const Landing: React.FC<LandingProps> = ({ onCreate, onParentMode, onMyStories, onSettings }) => {
   return (
-    <div className="min-h-screen bg-gradient-to-b from-saffron-50 via-rose2-50 to-emerald2-50">
+    <div className="relative min-h-screen overflow-x-hidden bg-gradient-to-b from-sky2-200 via-sky2-100 to-sky2-50">
       {/* Nav */}
-      <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-saffron-100">
+      <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-sky2-100">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
           <Logo />
           <div className="hidden md:flex items-center gap-6 text-sm font-bold text-gray-600">
-            <a href="#how" className="hover:text-saffron-600 transition-colors">How It Works</a>
-            <a href="#features" className="hover:text-saffron-600 transition-colors">Features</a>
-            <a href="#settings" className="hover:text-saffron-600 transition-colors">Settings</a>
-            <a href="#parent" className="hover:text-saffron-600 transition-colors">Parent Mode</a>
+            <a href="#how" className="hover:text-sky2-600 transition-colors">How It Works</a>
+            <a href="#features" className="hover:text-sky2-600 transition-colors">Features</a>
+            <a href="#places" className="hover:text-sky2-600 transition-colors">Places</a>
+            <a href="#parent" className="hover:text-sky2-600 transition-colors">Parent Mode</a>
           </div>
           <div className="flex items-center gap-2">
-            <Button size="sm" variant="ghost" onClick={onMyStories} icon={<BookOpen className="w-4 h-4" />}>My Stories</Button>
-            <Button size="sm" onClick={onCreate} icon={<Sparkles className="w-4 h-4" />}>Create Story</Button>
+            <button onClick={onSettings} aria-label="Settings" className="rounded-full bg-sky2-50 p-2.5 text-sky2-700 ring-2 ring-sky2-100 transition-colors hover:bg-sky2-100">
+              <SettingsIcon className="w-4 h-4" />
+            </button>
+            <Button size="sm" variant="ghost" onClick={onMyStories} icon={<BookOpen className="w-4 h-4" />}><span className="hidden sm:inline">My Stories</span></Button>
+            <Button size="sm" onClick={onCreate} icon={<Sparkles className="w-4 h-4" />}><span className="hidden sm:inline">Create Story</span></Button>
           </div>
         </div>
       </nav>
 
       {/* Hero */}
-      <section className="relative overflow-hidden px-4 pt-16 pb-24">
+      <section className="relative overflow-hidden bg-gradient-to-b from-sky2-300 via-sky2-200 to-sky2-50 px-4 pt-16 pb-24">
         <FloatingDecor />
         <div className="mx-auto max-w-6xl">
           <div className="grid items-center gap-12 md:grid-cols-2">
@@ -61,14 +65,14 @@ export const Landing: React.FC<LandingProps> = ({ onCreate, onParentMode, onMySt
               <SectionBadge>
                 <Sparkles className="w-4 h-4" /> AI Storytelling for Kids
               </SectionBadge>
-              <h1 className="mt-6 text-5xl font-extrabold leading-tight text-gray-800 md:text-6xl">
+              <h1 className="mt-6 text-5xl font-extrabold leading-tight text-sky2-900 md:text-6xl">
                 Stories Where
-                <span className="block bg-gradient-to-r from-saffron-500 via-rose2-500 to-saffron-600 bg-clip-text text-transparent">
+                <span className="block bg-gradient-to-r from-sky2-500 via-sky2-600 to-sky2-700 bg-clip-text text-transparent">
                   Your Child Is the Hero
                 </span>
               </h1>
-              <p className="mt-6 text-lg text-gray-600 md:text-xl">
-                Qissa creates magical, personalized picture books in <strong>Urdu</strong>, <strong>Pashto</strong>, and <strong>English</strong>. Your child picks their name, avatar, setting, and lesson — and becomes the hero of their own adventure.
+              <p className="mt-6 text-lg text-sky2-900/80 md:text-xl">
+                Qissa creates magical, personalized picture books in <strong>Urdu</strong>, <strong>Pashto</strong>, and <strong>English</strong>. Set up your hero once, then just pick a place and a lesson — and your child becomes the hero of a brand-new adventure.
               </p>
               <div className="mt-8 flex flex-wrap gap-4">
                 <Button size="lg" onClick={onCreate} icon={<Sparkles className="w-5 h-5" />}>
@@ -86,18 +90,18 @@ export const Landing: React.FC<LandingProps> = ({ onCreate, onParentMode, onMySt
 
             {/* Hero illustration card */}
             <div className="relative animate-fade-up" style={{ animationDelay: '0.2s' }}>
-              <div className="relative rounded-[2rem] bg-white p-3 shadow-2xl shadow-rose2-200/50 ring-1 ring-saffron-100">
+              <div className="relative rounded-[2rem] bg-white p-3 shadow-2xl shadow-sky2-300/50 ring-1 ring-sky2-100">
                 <div className="overflow-hidden rounded-[1.5rem]">
                   <MountainScene className="w-full h-64" />
                 </div>
                 <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 flex gap-3">
-                  <div className="rounded-2xl bg-saffron-400 px-4 py-2 text-white font-bold shadow-lg text-sm">Urdu</div>
+                  <div className="rounded-2xl bg-sky2-400 px-4 py-2 text-white font-bold shadow-lg text-sm">Urdu</div>
                   <div className="rounded-2xl bg-sky2-500 px-4 py-2 text-white font-bold shadow-lg text-sm">English</div>
                   <div className="rounded-2xl bg-emerald2-500 px-4 py-2 text-white font-bold shadow-lg text-sm">Pashto</div>
                 </div>
               </div>
               {/* floating cards */}
-              <div className="absolute -top-6 -left-4 animate-float rounded-2xl bg-white p-3 shadow-xl ring-1 ring-saffron-100">
+              <div className="absolute -top-6 -left-4 animate-float rounded-2xl bg-white p-3 shadow-xl ring-1 ring-sky2-100">
                 <div className="flex items-center gap-2">
                   <Star className="w-5 h-5 text-amber2-400 fill-amber2-400" />
                   <span className="text-sm font-bold text-gray-700">3 Stars!</span>
@@ -105,7 +109,7 @@ export const Landing: React.FC<LandingProps> = ({ onCreate, onParentMode, onMySt
               </div>
               <div className="absolute -bottom-10 -right-4 animate-float-slow rounded-2xl bg-white p-3 shadow-xl ring-1 ring-rose2-100">
                 <div className="flex items-center gap-2">
-                  <Mic className="w-5 h-5 text-saffron-500" />
+                  <Mic className="w-5 h-5 text-sky2-500" />
                   <span className="text-sm font-bold text-gray-700">Read-along</span>
                 </div>
               </div>
@@ -124,7 +128,7 @@ export const Landing: React.FC<LandingProps> = ({ onCreate, onParentMode, onMySt
           </div>
           <div className="mt-12 grid gap-8 md:grid-cols-3">
             {[
-              { num: '1', title: 'Choose Your Hero', desc: 'Pick a name, a cute avatar, and your language — Urdu, Pashto, or English.', icon: Sparkles, color: 'saffron' },
+              { num: '1', title: 'Meet Your Hero', desc: 'Set a name, a cute avatar, and your language once — Urdu, Pashto, or English.', icon: Sparkles, color: 'sky2' },
               { num: '2', title: 'Pick Your Adventure', desc: 'Select a setting — Peshawar bazaar, Swat valley, a village, or Eid night — and a lesson to learn.', icon: MapPin, color: 'emerald2' },
               { num: '3', title: 'Read & Play', desc: 'Enjoy the illustrated story with narration, make choices, and earn star rewards in the quiz!', icon: Star, color: 'rose2' },
             ].map((step, i) => (
@@ -164,7 +168,7 @@ export const Landing: React.FC<LandingProps> = ({ onCreate, onParentMode, onMySt
       </section>
 
       {/* Pakistani Settings */}
-      <section id="settings" className="px-4 py-20">
+      <section id="places" className="px-4 py-20">
         <div className="mx-auto max-w-6xl">
           <div className="text-center">
             <SectionBadge color="emerald2"><MapPin className="w-4 h-4" /> Familiar & Cultural</SectionBadge>
@@ -188,7 +192,7 @@ export const Landing: React.FC<LandingProps> = ({ onCreate, onParentMode, onMySt
       </section>
 
       {/* Parent Purpose Mode */}
-      <section id="parent" className="bg-gradient-to-br from-sky2-600 via-sky2-700 to-emerald2-700 px-4 py-20">
+      <section id="parent" className="bg-gradient-to-br from-sky2-500 via-sky2-600 to-sky2-700 px-4 py-20">
         <div className="mx-auto max-w-6xl">
           <div className="grid items-center gap-12 md:grid-cols-2">
             <div className="text-white">
@@ -238,7 +242,7 @@ export const Landing: React.FC<LandingProps> = ({ onCreate, onParentMode, onMySt
       {/* Final CTA */}
       <section className="px-4 py-20">
         <div className="mx-auto max-w-4xl text-center">
-          <div className="relative rounded-[2rem] bg-gradient-to-br from-saffron-400 via-rose2-500 to-saffron-600 p-12 shadow-2xl">
+          <div className="relative rounded-[2rem] bg-gradient-to-br from-sky2-400 via-sky2-500 to-sky2-600 p-12 shadow-2xl">
             <FloatingDecor />
             <StarTwinkle className="absolute top-6 left-8 animate-twinkle" size={28} />
             <StarTwinkle className="absolute top-10 right-10 animate-twinkle" size={20} style={{ animationDelay: '1s' } as React.CSSProperties} />
@@ -253,14 +257,14 @@ export const Landing: React.FC<LandingProps> = ({ onCreate, onParentMode, onMySt
       </section>
 
       {/* Footer */}
-      <footer className="bg-gray-900 px-4 py-12">
+      <footer className="bg-sky2-900 px-4 py-12">
         <div className="mx-auto max-w-6xl">
           <div className="flex flex-col items-center justify-between gap-6 md:flex-row">
             <Logo />
             <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-gray-400">
-              <a href="#how" className="hover:text-saffron-400 transition-colors">How It Works</a>
-              <a href="#features" className="hover:text-saffron-400 transition-colors">Features</a>
-              <a href="#parent" className="hover:text-saffron-400 transition-colors">Parent Mode</a>
+              <a href="#how" className="hover:text-sky2-400 transition-colors">How It Works</a>
+              <a href="#features" className="hover:text-sky2-400 transition-colors">Features</a>
+              <a href="#parent" className="hover:text-sky2-400 transition-colors">Parent Mode</a>
               <span className="flex items-center gap-1.5"><ShieldCheck className="w-4 h-4 text-emerald2-400" /> Child-safe</span>
             </div>
           </div>

@@ -1,12 +1,29 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { callGemini } from '../api/story';
 import { AVATARS, LESSONS, SETTINGS, buildStory } from '../src/data/storyData';
 
-const successResponse = () => new Response(JSON.stringify({
-  candidates: [{ content: { parts: [{ text: '{"ok":true}' }] } }],
-}), { status: 200 });
-
 const requestBody = JSON.stringify({ settingId: 'swat', lessonId: 'courage', language: 'urdu', gender: 'girl' });
+
+const geminiStoryResponse = () => {
+  const built = buildStory({ childName: 'Ayesha', avatar: AVATARS[0], language: 'urdu', hero: 'Ayesha', setting: SETTINGS[1], lesson: LESSONS[0] });
+  const raw = {
+    title: built.title,
+    pages: built.pages.map((page) => ({ text: page.text, illustration: page.illustration, ...(page.choices ? { choices: page.choices.map((choice) => ({ text: choice.text })) } : {}) })),
+    quiz: built.quiz,
+  };
+  return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(raw) }] }, finishReason: 'STOP' }] }), { status: 200 });
+};
+
+// Fresh module per test so env stubs (read at import time) take effect.
+async function loadApi() {
+  vi.stubEnv('GEMINI_API_KEY', 'test-key');
+  vi.stubEnv('GEMINI_MODEL', 'gemini-primary');
+  vi.stubEnv('GEMINI_FALLBACK_MODELS', 'gemini-primary');
+  vi.stubEnv('GROQ_API_KEY', '');
+  vi.resetModules();
+  const api = await import('../api/story');
+  api.resetApiStateForTests();
+  return api;
+}
 
 afterEach(() => {
   vi.useRealTimers();
@@ -15,34 +32,44 @@ afterEach(() => {
 });
 
 describe('Gemini retry policy', () => {
-  it('retries retryable HTTP failures up to three total attempts', async () => {
+  it('retries a retryable HTTP failure once on the same model', async () => {
     vi.useFakeTimers();
-    vi.stubEnv('GEMINI_API_KEY', 'test-key');
+    const { POST } = await loadApi();
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(new Response('{}', { status: 429 }))
       .mockResolvedValueOnce(new Response('{}', { status: 503 }))
-      .mockImplementationOnce(() => Promise.resolve(successResponse()));
+      .mockImplementationOnce(() => Promise.resolve(geminiStoryResponse()));
     vi.stubGlobal('fetch', fetchMock);
     const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.spyOn(console, 'info').mockImplementation(() => undefined);
 
-    const resultPromise = callGemini('test prompt');
+    const responsePromise = POST(new Request('http://localhost/api/story', { method: 'POST', body: requestBody }));
     await vi.runAllTimersAsync();
-    await expect(resultPromise).resolves.toBe('{"ok":true}');
+    const response = await responsePromise;
+    const body = await response.json() as { provider: string; attempts?: number };
 
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(errorLog).toHaveBeenCalledTimes(2);
-    expect(errorLog.mock.calls[0][1]).toMatchObject({ model: 'gemini-3.5-flash-lite', attempt: 1, outcome: 'Gemini HTTP 429' });
-    expect(errorLog.mock.calls[1][1]).toMatchObject({ model: 'gemini-3.5-flash-lite', attempt: 2, outcome: 'Gemini HTTP 503' });
+    expect(response.status).toBe(200);
+    expect(body.provider).toBe('gemini');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const attemptLogs = errorLog.mock.calls.filter((call) => call[0] === '[story] gemini attempt');
+    expect(attemptLogs).toHaveLength(1);
+    expect(attemptLogs[0][1]).toMatchObject({ model: 'gemini-primary', attempt: 1, outcome: 'Gemini HTTP 503' });
   });
 
   it.each([400, 401, 403])('does not retry HTTP %s failures', async (status) => {
-    vi.stubEnv('GEMINI_API_KEY', 'test-key');
-    const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status }));
+    vi.useFakeTimers();
+    const { POST } = await loadApi();
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response('{}', { status })));
     vi.stubGlobal('fetch', fetchMock);
-    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.spyOn(console, 'info').mockImplementation(() => undefined);
 
-    await expect(callGemini('test prompt')).rejects.toThrow(status === 400 ? 'bad request' : status === 401 || status === 403 ? 'invalid API key or permission' : `Gemini HTTP ${status}`);
+    const responsePromise = POST(new Request('http://localhost/api/story', { method: 'POST', body: requestBody }));
+    await vi.runAllTimersAsync();
+    await responsePromise;
+
     expect(fetchMock).toHaveBeenCalledTimes(1);
+    const expected = status === 400 ? 'Gemini bad request' : 'Gemini invalid API key or permission';
+    expect(errorLog.mock.calls.some((call) => call[0] === '[story] gemini attempt' && (call[1] as { outcome: string }).outcome === expected)).toBe(true);
   });
 
   it('uses the next configured model after all primary attempts fail', async () => {
@@ -74,8 +101,8 @@ describe('Gemini retry policy', () => {
     expect(response.status).toBe(200);
     expect(body.provider).toBe('gemini');
     expect(body.model).toBe('gemini-fallback');
-    expect(body.attempts).toBe(4);
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(body.attempts).toBe(3); // 2 on the primary (one retry), 1 on the fallback
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   it('returns the fallback signal when the total timeout ceiling is reached', async () => {

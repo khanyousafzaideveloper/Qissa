@@ -6,7 +6,7 @@ import {
   useMemo,
 } from 'react';
 import { Language } from '../../data/storyData';
-import { getBestVoiceForLanguage, getVoicesForLanguage } from './voices';
+import { getVoicesForLanguage } from './voices';
 import { chunkText } from './chunk';
 
 export type NarrationStatus = 'idle' | 'playing' | 'paused' | 'unsupported' | 'no-voice';
@@ -50,11 +50,12 @@ export function useNarration(
   text: string,
   language: Language,
   useServerVoice?: boolean,
+  initialSpeed: NarrationSpeed = 1.0,
 ): UseNarrationReturn {
   const [state, setState] = useState<NarrationState>({
     status: 'idle',
     currentChunkIndex: 0,
-    speed: 1.0,
+    speed: initialSpeed,
     paused: false,
   });
 

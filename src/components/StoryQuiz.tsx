@@ -55,18 +55,18 @@ export const StoryQuiz: React.FC<QuizProps> = ({ story, config, onHome, onReplay
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-amber2-50 via-saffron-50 to-rose2-50">
+    <div className="relative min-h-screen overflow-x-hidden bg-gradient-to-b from-sky2-200 via-sky2-100 to-sky2-50">
       <FloatingDecor />
-      <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-saffron-100">
+      <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-sky2-100">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3">
           <Logo size={28} />
-          <button onClick={onHome} className="rounded-full bg-white/60 p-2 text-gray-500 hover:text-saffron-600 transition-colors">
+          <button onClick={onHome} className="rounded-full bg-white/60 p-2 text-gray-500 hover:text-sky2-600 transition-colors">
             <Home className="w-5 h-5" />
           </button>
         </div>
       </nav>
 
-      <div className="mx-auto max-w-2xl px-4 py-8">
+      <div className="relative mx-auto max-w-2xl px-4 py-8">
         {/* Stars earned */}
         <div className="mb-6 flex items-center justify-center gap-2">
           {Array.from({ length: quizQuestions.length }).map((_, i) => (
@@ -100,7 +100,7 @@ export const StoryQuiz: React.FC<QuizProps> = ({ story, config, onHome, onReplay
               {question.options.map((opt, i) => {
                 const isCorrect = i === question.answer;
                 const isSelected = i === selected;
-                let stateClass = 'bg-white ring-2 ring-saffron-100 hover:ring-saffron-300 hover:shadow-md';
+                let stateClass = 'bg-white ring-2 ring-sky2-100 hover:ring-sky2-300 hover:shadow-md';
                 if (answered) {
                   if (isCorrect) stateClass = 'bg-emerald2-100 ring-2 ring-emerald2-400';
                   else if (isSelected) stateClass = 'bg-rose2-100 ring-2 ring-rose2-400';
@@ -116,7 +116,7 @@ export const StoryQuiz: React.FC<QuizProps> = ({ story, config, onHome, onReplay
                     <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-extrabold ${
                       answered && isCorrect ? 'bg-emerald2-500 text-white' :
                       answered && isSelected ? 'bg-rose2-500 text-white' :
-                      'bg-saffron-100 text-saffron-600'
+                      'bg-sky2-100 text-sky2-600'
                     }`}>
                       {answered && isCorrect ? <Check className="w-5 h-5" /> :
                        answered && isSelected ? <X className="w-5 h-5" /> :
@@ -240,7 +240,7 @@ const RewardScreen: React.FC<RewardProps> = ({ stars, total, story, config, onHo
   };
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-gradient-to-b from-amber2-100 via-saffron-50 to-rose2-50">
+    <div className="relative min-h-screen overflow-hidden bg-gradient-to-b from-sky2-300 via-sky2-100 to-amber2-50">
       <FloatingDecor />
       {/* Confetti stars */}
       {showStars && (
@@ -261,10 +261,10 @@ const RewardScreen: React.FC<RewardProps> = ({ stars, total, story, config, onHo
         </div>
       )}
 
-      <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-saffron-100">
+      <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-sky2-100">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3">
           <Logo size={28} />
-          <button onClick={onHome} className="rounded-full bg-white/60 p-2 text-gray-500 hover:text-saffron-600 transition-colors">
+          <button onClick={onHome} className="rounded-full bg-white/60 p-2 text-gray-500 hover:text-sky2-600 transition-colors">
             <Home className="w-5 h-5" />
           </button>
         </div>
@@ -274,7 +274,7 @@ const RewardScreen: React.FC<RewardProps> = ({ stars, total, story, config, onHo
         {/* Trophy + stars */}
         <div className="animate-pop-in">
           <div className="relative mx-auto inline-block">
-            <div className="flex h-28 w-28 items-center justify-center rounded-full bg-gradient-to-br from-amber2-300 to-saffron-500 shadow-2xl shadow-saffron-300/50">
+            <div className="flex h-28 w-28 items-center justify-center rounded-full bg-gradient-to-br from-amber2-300 to-amber2-500 shadow-2xl shadow-amber2-300/50">
               <Trophy className="w-14 h-14 text-white" />
             </div>
             <StarTwinkle className="absolute -top-2 -right-2 animate-twinkle" size={28} />
@@ -307,7 +307,7 @@ const RewardScreen: React.FC<RewardProps> = ({ stars, total, story, config, onHo
 
         {/* Avatar celebration */}
         <div className="mt-8 flex justify-center animate-bounce-soft">
-          <div className="rounded-3xl bg-white p-4 shadow-xl ring-1 ring-saffron-100">
+          <div className="rounded-3xl bg-white p-4 shadow-xl ring-1 ring-sky2-100">
             <AvatarSvg avatar={config.avatar} size={72} />
             <p className="mt-2 text-sm font-bold text-gray-600">{config.childName}</p>
           </div>
@@ -317,7 +317,7 @@ const RewardScreen: React.FC<RewardProps> = ({ stars, total, story, config, onHo
         <div className="mt-10 grid gap-4 sm:grid-cols-2">
           <button
             onClick={handleDownload}
-            className="flex items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-emerald2-500 to-sky2-500 p-5 font-bold text-white shadow-lg transition-all hover:scale-105 hover:shadow-xl"
+            className="flex items-center justify-center gap-3 rounded-2xl bg-gradient-to-b from-amber2-300 to-amber2-400 p-5 font-bold text-amber2-900 shadow-lg transition-all hover:scale-105 hover:shadow-xl"
           >
             <Download className="w-6 h-6" />
             <div className="text-left">
@@ -327,7 +327,7 @@ const RewardScreen: React.FC<RewardProps> = ({ stars, total, story, config, onHo
           </button>
           <button
             onClick={handleShare}
-            className="flex items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-saffron-500 to-rose2-500 p-5 font-bold text-white shadow-lg transition-all hover:scale-105 hover:shadow-xl"
+            className="flex items-center justify-center gap-3 rounded-2xl bg-gradient-to-b from-sky2-400 to-sky2-600 p-5 font-bold text-white shadow-lg transition-all hover:scale-105 hover:shadow-xl"
           >
             <Share2 className="w-6 h-6" />
             <div className="text-left">

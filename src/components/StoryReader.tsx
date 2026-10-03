@@ -1,9 +1,11 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Logo, Card } from './ui';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Logo, Card, FloatingDecor } from './ui';
 import { ILLUSTRATION_MAP, AvatarSvg, StarTwinkle } from './Illustrations';
 import { StoryData, StoryConfig, Language, LANGUAGE_META, languageKey, isRtlLanguage } from '../data/storyData';
-import { ArrowLeft, ArrowRight, Volume2, Pause, Square, Globe, Home, Sparkles, Star, CloudOff, Zap } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Volume2, Pause, Square, Globe, Home, Sparkles, Star, CloudOff } from 'lucide-react';
 import { useNarration } from '../lib/tts/useNarration';
+import { chunkText } from '../lib/tts/chunk';
+import type { Preferences } from '../data/preferences';
 
 interface ReaderProps {
   story: StoryData;
@@ -11,33 +13,23 @@ interface ReaderProps {
   onComplete: () => void;
   onHome: () => void;
   isOffline?: boolean;
+  preferences: Preferences;
 }
 
 const LANGUAGES: Language[] = ['english', 'urdu', 'pashto'];
 
-function nextLanguage(language: Language): Language {
-  const index = LANGUAGES.indexOf(language);
-  return LANGUAGES[(index + 1) % LANGUAGES.length];
-}
 
-export const StoryReader: React.FC<ReaderProps> = ({ story, config, onComplete, onHome, isOffline = false }) => {
+export const StoryReader: React.FC<ReaderProps> = ({ story, config, onComplete, onHome, isOffline = false, preferences }) => {
   const [pageIdx, setPageIdx] = useState(() => {
     const saved = localStorage.getItem(`qissa-last-read-${story.title.en}`);
     return saved ? Math.min(parseInt(saved, 10), story.pages.length - 1) : 0;
   });
   const [lang, setLang] = useState<Language>(config.language);
-  const [secondaryLang, setSecondaryLang] = useState<Language>(nextLanguage(config.language));
+  const [secondaryLang, setSecondaryLang] = useState<Language>(config.language === 'english' ? 'urdu' : 'english');
   const [showBilingual, setShowBilingual] = useState(true);
-  const [highlightedWord, setHighlightedWord] = useState(-1);
   const [chosenPath, setChosenPath] = useState<number[]>([0]);
-  const [autoReadEnabled, setAutoReadEnabled] = useState(() => {
-    const saved = localStorage.getItem('qissa-auto-read');
-    return saved ? JSON.parse(saved) : false;
-  });
-  const [useServerVoice, setUseServerVoice] = useState(() => {
-    const saved = localStorage.getItem('qissa-use-server-voice');
-    return saved ? JSON.parse(saved) : false;
-  });
+  // Reading-aloud options come from Settings so the page itself stays simple for kids.
+  const { autoRead: autoReadEnabled, useServerVoice, narrationSpeed } = preferences;
 
   const page = story.pages[pageIdx];
   const Scene = ILLUSTRATION_MAP[page.illustration] || ILLUSTRATION_MAP.mountain;
@@ -50,7 +42,19 @@ export const StoryReader: React.FC<ReaderProps> = ({ story, config, onComplete, 
   const words = text.split(/\s+/);
 
   // Use the new narration hook
-  const narration = useNarration(text, lang, useServerVoice);
+  const narration = useNarration(text, lang, useServerVoice, narrationSpeed);
+
+  // Narration speaks one sentence chunk at a time, so highlight that chunk's words as it's read.
+  const chunkWordRanges = useMemo(() => {
+    let start = 0;
+    return chunkText(text).map((chunk) => {
+      const count = chunk.split(/\s+/).filter(Boolean).length;
+      const range = [start, start + count] as const;
+      start += count;
+      return range;
+    });
+  }, [text]);
+  const activeRange = narration.status === 'playing' ? chunkWordRanges[narration.currentChunkIndex] : undefined;
 
   // Auto-read on page load if enabled and not reduced motion
   useEffect(() => {
@@ -58,15 +62,6 @@ export const StoryReader: React.FC<ReaderProps> = ({ story, config, onComplete, 
       narration.play();
     }
   }, [pageIdx, autoReadEnabled, narration]);
-
-  // Save preferences to localStorage
-  useEffect(() => {
-    localStorage.setItem('qissa-auto-read', JSON.stringify(autoReadEnabled));
-  }, [autoReadEnabled]);
-
-  useEffect(() => {
-    localStorage.setItem('qissa-use-server-voice', JSON.stringify(useServerVoice));
-  }, [useServerVoice]);
 
   const handlePrimaryLanguage = (next: Language) => {
     if (next === secondaryLang) setSecondaryLang(lang);
@@ -94,9 +89,10 @@ export const StoryReader: React.FC<ReaderProps> = ({ story, config, onComplete, 
   const IllustrationComponent = Scene;
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-sky2-900 via-sky2-800 to-indigo-900">
+    <div className="relative min-h-screen overflow-x-hidden bg-gradient-to-b from-sky2-500 via-sky2-300 to-sky2-100">
+      <FloatingDecor />
       {/* Header */}
-      <nav className="sticky top-0 z-50 bg-sky2-900/80 backdrop-blur-md border-b border-white/10">
+      <nav className="sticky top-0 z-50 bg-sky2-600 border-b border-white/20 shadow-md">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
           <button onClick={onHome} className="flex items-center gap-2 text-white">
             <Logo size={28} showText={false} />
@@ -109,7 +105,7 @@ export const StoryReader: React.FC<ReaderProps> = ({ story, config, onComplete, 
                 <button
                   key={language}
                   onClick={() => handlePrimaryLanguage(language)}
-                  className={`rounded-full px-2.5 py-1 text-xs font-bold transition-all ${lang === language ? 'bg-white text-saffron-600' : 'text-white/70'}`}
+                  className={`rounded-full px-2.5 py-1 text-xs font-bold transition-all ${lang === language ? 'bg-white text-sky2-700 shadow' : 'text-white/80 hover:text-white'}`}
                 >{LANGUAGE_META[language].native}</button>
               ))}
             </div>
@@ -138,20 +134,20 @@ export const StoryReader: React.FC<ReaderProps> = ({ story, config, onComplete, 
         
         {/* Progress bar */}
         <div className="mx-auto max-w-5xl px-4 py-2">
-          <div className="h-1 w-full rounded-full bg-white/10 overflow-hidden">
+          <div className="h-2 w-full rounded-full bg-white/25 overflow-hidden">
             <div
-              className="h-full bg-gradient-to-r from-saffron-400 to-rose2-400 transition-all duration-300"
+              className="h-full rounded-full bg-gradient-to-r from-amber2-300 to-amber2-400 transition-all duration-300"
               style={{ width: `${((pageIdx + 1) / story.pages.length) * 100}%` }}
             />
           </div>
-          <div className="mt-2 flex items-center justify-between text-xs text-white/60">
+          <div className="mt-1.5 flex items-center justify-between text-xs font-bold text-white/85">
             <span>Page {pageIdx + 1} of {story.pages.length}</span>
             <span>{Math.round(((pageIdx + 1) / story.pages.length) * 100)}%</span>
           </div>
         </div>
       </nav>
 
-      <div className="mx-auto max-w-4xl px-4 py-6">
+      <div className="relative mx-auto max-w-4xl px-4 py-6">
         {/* Story title */}
         <div className="mb-4 text-center">
           {isOffline && (
@@ -190,7 +186,7 @@ export const StoryReader: React.FC<ReaderProps> = ({ story, config, onComplete, 
             </div>
 
             {/* Text area */}
-            <div className="bg-gradient-to-b from-white to-saffron-50 p-6 sm:p-8">
+            <div className="bg-gradient-to-b from-white to-sky2-50 p-6 sm:p-8">
               {/* Primary language */}
               <div className={textFontClass} dir={isRtl ? 'rtl' : 'ltr'}>
                 <p className={`text-xl leading-loose ${isRtl ? 'text-right text-2xl' : ''}`}>
@@ -198,8 +194,8 @@ export const StoryReader: React.FC<ReaderProps> = ({ story, config, onComplete, 
                     <span
                       key={i}
                       className={`transition-all duration-200 ${
-                        i === highlightedWord
-                          ? 'bg-saffron-200 rounded-lg px-1 text-saffron-800 scale-110 inline-block'
+                        activeRange && i >= activeRange[0] && i < activeRange[1]
+                          ? 'bg-amber2-200 rounded-md text-amber2-900'
                           : 'text-gray-800'
                       }`}
                     >
@@ -211,7 +207,7 @@ export const StoryReader: React.FC<ReaderProps> = ({ story, config, onComplete, 
 
               {/* Bilingual second language */}
               {showBilingual && (
-                <div className={`mt-4 border-t-2 border-dashed border-saffron-200 pt-4 ${secondaryIsRtl ? 'font-script' : ''}`} dir={secondaryIsRtl ? 'rtl' : 'ltr'}>
+                <div className={`mt-4 border-t-2 border-dashed border-sky2-200 pt-4 ${secondaryIsRtl ? 'font-script' : ''}`} dir={secondaryIsRtl ? 'rtl' : 'ltr'}>
                   <p className={`text-lg leading-loose text-gray-600 ${secondaryIsRtl ? 'text-right text-xl' : ''}`}>
                     {secondaryText}
                   </p>
@@ -230,8 +226,10 @@ export const StoryReader: React.FC<ReaderProps> = ({ story, config, onComplete, 
                   <div className="rounded-lg bg-sky2-50 p-3 text-sm text-sky2-800">
                     <p className="font-semibold mb-2">Voice not installed for {LANGUAGE_META[lang].label}</p>
                     <p className="text-xs mb-2">Try Microsoft Edge, or install the language voice in system settings.</p>
-                    {useServerVoice && (
-                      <p className="text-xs text-saffron-700">Using AI voice service instead.</p>
+                    {useServerVoice ? (
+                      <p className="text-xs text-sky2-700">Using AI voice service instead.</p>
+                    ) : (
+                      <p className="text-xs">Or turn on &quot;Use AI voice&quot; in Settings.</p>
                     )}
                   </div>
                 )}
@@ -242,12 +240,12 @@ export const StoryReader: React.FC<ReaderProps> = ({ story, config, onComplete, 
                   <button
                     onClick={() => narration.play()}
                     disabled={narration.status === 'unsupported' || narration.status === 'playing'}
-                    className={`flex items-center gap-2 rounded-full px-5 py-2.5 font-bold transition-all duration-300 ${
+                    className={`flex items-center gap-2 rounded-full px-6 py-3 font-display text-lg font-bold transition-all duration-300 ${
                       narration.status === 'playing'
                         ? 'bg-rose2-100 text-rose2-600 ring-2 ring-rose2-300'
                         : narration.status === 'unsupported' || narration.status === 'no-voice'
                         ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                        : 'bg-saffron-100 text-saffron-700 hover:bg-saffron-200'
+                        : 'bg-sky2-500 text-white shadow-[0_4px_0_0_#1c6aa8] hover:brightness-110 active:translate-y-1 active:shadow-none'
                     }`}
                     aria-label="Play narration"
                   >
@@ -292,39 +290,18 @@ export const StoryReader: React.FC<ReaderProps> = ({ story, config, onComplete, 
                   )}
                 </div>
 
-                {/* Speed selector */}
-                {narration.status !== 'unsupported' && (
+                {/* Voice picker — only worth showing when there's a real choice */}
+                {narration.availableVoices.length > 1 && narration.status !== 'unsupported' && (
                   <div className="flex items-center justify-center gap-2">
-                    <span className="text-xs font-semibold text-gray-600">Speed:</span>
-                    {([0.7, 0.85, 1.0] as const).map((speed) => (
-                      <button
-                        key={speed}
-                        onClick={() => narration.setSpeed(speed)}
-                        className={`rounded-full px-3 py-1 text-xs font-bold transition-all ${
-                          narration.speed === speed
-                            ? 'bg-saffron-200 text-saffron-800'
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                        aria-label={`Set speed to ${speed}x`}
-                      >
-                        {speed}x
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {/* Voice picker */}
-                {narration.availableVoices.length > 0 && narration.status !== 'unsupported' && (
-                  <div className="flex items-center justify-center gap-2">
-                    <label className="text-xs font-semibold text-gray-600">Voice:</label>
+                    <label htmlFor="voice-select" className="text-xs font-semibold text-gray-500">Voice</label>
                     <select
+                      id="voice-select"
                       value={narration.selectedVoice?.name || ''}
                       onChange={(e) => {
                         const voice = narration.availableVoices.find((v) => v.name === e.target.value);
                         if (voice) narration.setSelectedVoice(voice);
                       }}
-                      className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-gray-700 border border-gray-300 shadow-sm"
-                      aria-label="Select voice"
+                      className="max-w-[14rem] truncate rounded-full border border-sky2-200 bg-white px-3 py-1 text-xs font-semibold text-gray-700"
                     >
                       {narration.availableVoices.map((voice) => (
                         <option key={voice.name} value={voice.name}>
@@ -334,61 +311,23 @@ export const StoryReader: React.FC<ReaderProps> = ({ story, config, onComplete, 
                     </select>
                   </div>
                 )}
-
-                {/* Auto-read toggle */}
-                <div className="flex items-center justify-center gap-2">
-                  <input
-                    type="checkbox"
-                    id="auto-read-toggle"
-                    checked={autoReadEnabled}
-                    onChange={(e) => setAutoReadEnabled(e.target.checked)}
-                    className="w-4 h-4 rounded"
-                    aria-label="Enable auto-read on page load"
-                  />
-                  <label htmlFor="auto-read-toggle" className="text-xs font-semibold text-gray-700 cursor-pointer">
-                    Auto-read each page
-                  </label>
-                </div>
-
-                {/* Server voice toggle (parent mode only) */}
-                {!narration.prefersReducedMotion && (
-                  <div className="flex items-center justify-center gap-2 border-t pt-2">
-                    <input
-                      type="checkbox"
-                      id="server-voice-toggle"
-                      checked={useServerVoice}
-                      onChange={(e) => setUseServerVoice(e.target.checked)}
-                      className="w-4 h-4 rounded"
-                      aria-label="Use AI voice service"
-                    />
-                    <label htmlFor="server-voice-toggle" className="text-xs font-semibold text-gray-700 cursor-pointer flex items-center gap-1">
-                      <Zap className="w-3 h-3" />
-                      Use AI voice
-                    </label>
-                  </div>
-                )}
-                {useServerVoice && (
-                  <p className="text-center text-xs text-gray-500 italic">
-                    The story text, including your child's name, is sent to a voice service to create audio.
-                  </p>
-                )}
               </div>
 
               {/* "What happens next?" choices */}
               {page.choices && (
                 <div className="mt-6">
                   <div className="mb-3 flex items-center justify-center gap-2">
-                    <Sparkles className="w-5 h-5 text-rose2-500 animate-bounce-soft" />
-                    <span className="font-display text-lg font-bold text-rose2-600">What happens next?</span>
+                    <Sparkles className="w-5 h-5 text-amber2-500 animate-bounce-soft" />
+                    <span className="font-display text-xl font-bold text-sky2-700">What happens next?</span>
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
                     {page.choices.map((choice, i) => (
                       <button
                         key={i}
                         onClick={() => handleChoice(choice.nextPage)}
-                        className="group flex items-center gap-3 rounded-2xl bg-white p-4 text-left shadow-md ring-2 ring-saffron-100 transition-all duration-300 hover:ring-rose2-400 hover:shadow-lg hover:scale-105"
+                        className="group flex items-center gap-3 rounded-2xl bg-white p-4 text-left shadow-md ring-2 ring-sky2-100 transition-all duration-300 hover:ring-sky2-400 hover:shadow-lg hover:scale-105"
                       >
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-rose2-100 font-bold text-rose2-600 group-hover:bg-rose2-500 group-hover:text-white transition-colors">
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sky2-100 font-bold text-sky2-600 group-hover:bg-sky2-500 group-hover:text-white transition-colors">
                           {i + 1}
                         </div>
                         <div>
@@ -418,16 +357,16 @@ export const StoryReader: React.FC<ReaderProps> = ({ story, config, onComplete, 
                   {canGoNext ? (
                     <button
                       onClick={() => setPageIdx(pageIdx + 1)}
-                      className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-saffron-500 to-rose2-500 px-6 py-2.5 font-bold text-white shadow-lg transition-all hover:scale-105"
+                      className="flex items-center gap-1.5 rounded-full bg-gradient-to-b from-sky2-400 to-sky2-600 px-6 py-2.5 font-display font-bold text-white shadow-[0_4px_0_0_#1c6aa8] transition-all hover:brightness-110 active:translate-y-1 active:shadow-none"
                     >
                       Next <ArrowRight className="w-5 h-5" />
                     </button>
                   ) : isLastPage ? (
                     <button
                       onClick={onComplete}
-                      className="flex items-center gap-2 rounded-full bg-gradient-to-r from-emerald2-500 to-sky2-500 px-6 py-2.5 font-bold text-white shadow-lg transition-all hover:scale-105"
+                      className="flex items-center gap-2 rounded-full bg-gradient-to-b from-amber2-300 to-amber2-400 px-6 py-2.5 font-display font-bold text-amber2-900 shadow-[0_4px_0_0_#d97706] transition-all hover:brightness-105 active:translate-y-1 active:shadow-none"
                     >
-                      <Star className="w-5 h-5 fill-white" /> Quiz Time!
+                      <Star className="w-5 h-5 fill-amber2-900" /> Quiz Time!
                     </button>
                   ) : null}
                 </div>
@@ -442,7 +381,7 @@ export const StoryReader: React.FC<ReaderProps> = ({ story, config, onComplete, 
             <div
               key={i}
               className={`h-2.5 rounded-full transition-all duration-300 ${
-                i === pageIdx ? 'w-8 bg-saffron-400' : 'w-2.5 bg-white/30'
+                i === pageIdx ? 'w-8 bg-sky2-500' : 'w-2.5 bg-sky2-300/60'
               }`}
             />
           ))}

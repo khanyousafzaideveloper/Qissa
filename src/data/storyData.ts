@@ -1,3 +1,5 @@
+import { choiceTargets } from '../lib/story-topology.js';
+
 export type Language = 'english' | 'urdu' | 'pashto';
 export type LanguageKey = 'en' | 'ur' | 'ps';
 export type LocalizedText = Record<LanguageKey, string>;
@@ -40,13 +42,15 @@ export function inferStoryLength(pageCount: number): StoryLength {
   return 'short'; // Default for 6-page or unknown counts
 }
 
+export type AnimalKind = 'lion' | 'cat' | 'bunny' | 'panda' | 'fox' | 'owl' | 'elephant' | 'markhor';
+export type HeroGender = 'girl' | 'boy';
+
 export interface Avatar {
-  id: string;
+  id: AnimalKind;
   name: string;
+  nameUrdu: string;
+  /** Soft background tint behind the animal. */
   color: string;
-  skin: string;
-  hair: string;
-  gender: 'girl' | 'boy';
 }
 
 export interface StorySetting {
@@ -85,6 +89,8 @@ export interface StoryData {
 export interface StoryConfig {
   childName: string;
   avatar: Avatar;
+  /** Needed for Urdu/Pashto verb agreement now that avatars are animals. */
+  heroGender?: HeroGender;
   language: Language;
   hero: string;
   setting: StorySetting;
@@ -96,13 +102,20 @@ export interface StoryConfig {
 const text = (en: string, ur: string, ps: string): LocalizedText => ({ en, ur, ps });
 
 export const AVATARS: Avatar[] = [
-  { id: 'a1', name: 'Ayesha', color: '#f93c6a', skin: '#f4c4a0', hair: '#2d1810', gender: 'girl' },
-  { id: 'a2', name: 'Bilal', color: '#31a3eb', skin: '#e8b890', hair: '#1a1a1a', gender: 'boy' },
-  { id: 'a3', name: 'Fatima', color: '#1eb549', skin: '#f0b888', hair: '#3d2317', gender: 'girl' },
-  { id: 'a4', name: 'Hassan', color: '#fb7a0f', skin: '#d4a070', hair: '#1a1a1a', gender: 'boy' },
-  { id: 'a5', name: 'Zainab', color: '#f59e0b', skin: '#f4c4a0', hair: '#2d1810', gender: 'girl' },
-  { id: 'a6', name: 'Omar', color: '#e01f50', skin: '#c89060', hair: '#1a1a1a', gender: 'boy' },
+  { id: 'lion', name: 'Lion', nameUrdu: 'شیر', color: '#fef3c7' },
+  { id: 'cat', name: 'Cat', nameUrdu: 'بلی', color: '#ffedd5' },
+  { id: 'bunny', name: 'Bunny', nameUrdu: 'خرگوش', color: '#fce7f3' },
+  { id: 'panda', name: 'Panda', nameUrdu: 'پانڈا', color: '#dcfce7' },
+  { id: 'fox', name: 'Fox', nameUrdu: 'لومڑی', color: '#fee2e2' },
+  { id: 'owl', name: 'Owl', nameUrdu: 'الو', color: '#ede9fe' },
+  { id: 'elephant', name: 'Elephant', nameUrdu: 'ہاتھی', color: '#e0f2fe' },
+  { id: 'markhor', name: 'Markhor', nameUrdu: 'مارخور', color: '#ecfccb' },
 ];
+
+// Stories saved before animal avatars used child avatars a1–a6.
+export const LEGACY_AVATAR_ANIMALS: Record<string, AnimalKind> = {
+  a1: 'bunny', a2: 'lion', a3: 'cat', a4: 'fox', a5: 'owl', a6: 'panda',
+};
 
 export const SETTINGS: StorySetting[] = [
   { id: 'peshawar', label: 'Peshawar Bazaar', labelUrdu: 'پشاور بازار', labelPashto: 'د پېښور بازار', emoji: '🕌', gradient: 'from-saffron-400 to-rose2-500', sceneKey: 'bazaar' },
@@ -191,7 +204,7 @@ export function buildStory(config: StoryConfig): StoryData {
   ];
 
   // For medium and long, extend with varied continuation chapters
-  let pages: StoryPage[] = basePage;
+  const pages: StoryPage[] = basePage;
   if (storyLength === 'medium' || storyLength === 'long') {
     const illustrations: readonly StoryPage['illustration'][] = ['mountain', 'village', 'bazaar', 'eid', 'forest', 'school', 'night', 'journey'];
     const additionalCount = lengthConfig.pages - basePage.length;
@@ -251,9 +264,17 @@ export function buildStory(config: StoryConfig): StoryData {
       pages.push(newPage);
     }
 
-    // Remove choice from second-to-last page for medium
-    if (storyLength === 'medium' && pages.length > 1) {
-      pages[pages.length - 2].choices = undefined;
+    // Add the longer stories' decision points from the shared topology.
+    const branchChoices = [
+      text('Help right away', 'فوراً مدد کرو', 'سمدستي مرسته وکړه'),
+      text('Ask a friend for an idea', 'کسی دوست سے مشورہ لو', 'له ملګري مشوره واخله'),
+    ];
+    const continueChoice = text('Continue the adventure', 'مہم جاری رکھو', 'سفر ته دوام ورکړه');
+    for (const [index, targets] of Object.entries(choiceTargets(storyLength))) {
+      pages[Number(index)].choices = targets.map((nextPage, i) => ({
+        text: targets.length === 2 ? branchChoices[i] : continueChoice,
+        nextPage,
+      }));
     }
   }
 

@@ -11,9 +11,9 @@ interface StoryGenerationErrorProps {
 }
 
 export const StoryGenerationError: React.FC<StoryGenerationErrorProps> = ({ childName, onRetry, onUseOffline, onBack }) => (
-  <div className="min-h-screen bg-gradient-to-b from-sky2-900 via-sky2-800 to-indigo-900 px-4 text-center text-white">
+  <div className="relative min-h-screen overflow-hidden bg-gradient-to-b from-sky2-500 via-sky2-400 to-sky2-200 px-4 text-center text-white">
     <div className="mx-auto flex min-h-screen max-w-lg flex-col items-center justify-center">
-      <CloudOff className="h-14 w-14 text-saffron-300" />
+      <CloudOff className="h-14 w-14 text-amber2-300" />
       <h1 className="mt-5 text-3xl font-extrabold">We couldn&apos;t reach the story writer</h1>
       <p className="mt-3 text-white/75">
         {childName ? `${childName}'s story is ready as an offline story, or you can try the AI writer again.` : 'The offline story is ready, or you can try the AI writer again.'}

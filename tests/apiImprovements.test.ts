@@ -112,13 +112,10 @@ describe('Groq gpt-oss improvements', () => {
     const makeRequest = () => new Request('http://localhost/api/story', { method: 'POST', body: requestBody, headers: { 'content-type': 'application/json' } });
 
     // First request tries dead-model (404), then fallback (success)
-    await POST(makeRequest());
-    await vi.runAllTimersAsync();
-    const firstCallCount = fetchMock.mock.calls.length;
+    { const pending = POST(makeRequest()); await vi.runAllTimersAsync(); await pending; }
 
     // Second request should skip dead-model entirely
-    await POST(makeRequest());
-    await vi.runAllTimersAsync();
+    { const pending = POST(makeRequest()); await vi.runAllTimersAsync(); await pending; }
 
     const deadModelCalls = fetchMock.mock.calls
       .filter((call) => String(call[1]?.body || '').includes('dead-model'));
@@ -244,9 +241,7 @@ describe('Gemini circuit breaker', () => {
     const { POST, resetApiStateForTests } = await import('../api/story');
     resetApiStateForTests();
 
-    let requestCount = 0;
     const fetchMock = vi.fn().mockImplementation((url: string) => {
-      requestCount++;
       if (url.includes('gemini-flaky')) {
         return Promise.resolve(new Response('{}', { status: 503 }));
       }
@@ -264,19 +259,15 @@ describe('Gemini circuit breaker', () => {
     const makeRequest = () => new Request('http://localhost/api/story', { method: 'POST', body: requestBody, headers: { 'content-type': 'application/json' } });
 
     // First request: flaky fails once, then succeeds on backup
-    await POST(makeRequest());
-    await vi.runAllTimersAsync();
-    const firstCallCount = fetchMock.mock.calls.length;
+    { const pending = POST(makeRequest()); await vi.runAllTimersAsync(); await pending; }
 
     // Second request: flaky fails again (second time), circuit breaker activates
-    await POST(makeRequest());
-    await vi.runAllTimersAsync();
+    { const pending = POST(makeRequest()); await vi.runAllTimersAsync(); await pending; }
 
     // Third request: within 60s window, flaky should be skipped entirely (circuit breaker open)
     vi.advanceTimersByTime(30_000); // 30s passed, still within window
     const thirdRequestCalls = fetchMock.mock.calls.length;
-    await POST(makeRequest());
-    await vi.runAllTimersAsync();
+    { const pending = POST(makeRequest()); await vi.runAllTimersAsync(); await pending; }
 
     // Verify flaky model was skipped in 3rd request (no new calls to it)
     const flakyCallsInThirdRequest = fetchMock.mock.calls.slice(thirdRequestCalls)

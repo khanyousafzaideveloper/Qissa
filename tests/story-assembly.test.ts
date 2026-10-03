@@ -137,9 +137,9 @@ describe('story-assembly', () => {
       // Converge at page 13
       expect(story.pages[13].choices).toBeUndefined();
       
-      // Second branch at page 17
-      expect(story.pages[17].choices).toBeDefined();
-      expect(story.pages[17].choices).toHaveLength(2);
+      // Second branch at page 16 (paths 17 and 18 rejoin at 19)
+      expect(story.pages[16].choices).toBeDefined();
+      expect(story.pages[16].choices).toHaveLength(2);
       
       // Final convergence at page 19 (no choices on last page)
       expect(story.pages[19].choices).toBeUndefined();

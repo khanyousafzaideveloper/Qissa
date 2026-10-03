@@ -293,8 +293,6 @@ describe('story-partial', () => {
       const story = buildStory({ ...defaultConfig, setting });
       
       // Setting should be referenced
-      const storyText = JSON.stringify(story);
-      
       // At least some pages mention the setting
       const mentionsSettingCount = story.pages.filter((p) =>
         JSON.stringify(p).includes(setting.label)
